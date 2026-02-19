@@ -15,12 +15,13 @@
 ## 3. Session Replay & User Interactions
 3.1 How Session Replay Works  
 3.2 Automatically Captured Data  
-3.3 Tracking Screens   
+3.3 Tracking Screens  
 3.4 Tracking User Actions   
 3.5 Custom Attributes   
-3.6 Naming Best Practices   
-3.7 Performance Considerations   
-3.8 Analyzing Sessions in Noibu 
+3.6 Naming Best Practices  
+3.7 Performance Considerations  
+3.8 Analyzing Sessions in Noibu   
+3.9 Custom Errors
 
 
 - [1. Installation](#1-installation)  
@@ -183,6 +184,8 @@ The public API consists of:
 - `Noibu.shared.initialize(configuration:)` — Starts the SDK
 - `Noibu.shared.isInitialized` — Returns whether the SDK is currently active
 - `Noibu.shared.addCustomAttribute(name: String, value: String)` - Add a custom attribute
+- `Noibu.shared.didNavigate(pageName:)` — Split the replay into pages/screens (recommended)
+- `Noibu.shared.addError(...)` — Report custom errors to Noibu
 
 
 ### 2.1 Basic Initialization
@@ -363,6 +366,19 @@ var body: some View {
 
 This will give the replay viewer a clear, human-readable screen name that appears in the session timeline.
 
+### 3.3.1 Page Splitting (Recommended)
+
+In addition to labeling screens with `.trackView(name:)`, Noibu supports **page splitting** using:
+
+```swift
+Noibu.shared.didNavigate(pageName: String?)
+
+// Track page changes when the user switches tabs
+.onChange(of: selectedTab) { _, newTab in
+    Noibu.shared.didNavigate(pageName: pageName(for: newTab))
+}
+```
+
 ### 3.4 Tracking User Actions
 
 Although many interactions are captured automatically, developers can explicitly annotate meaningful user actions using the `.trackTapAction(name:)` view modifier.
@@ -466,6 +482,17 @@ Button(action: {
 .trackTapAction(name: "Toggle content button")
 ```
 
+#### Pairing with Page Splitting
+Custom Attributes work great together with `didNavigate(pageName:)`.
+
+Example:
+```swift
+.onAppear {
+    Noibu.shared.didNavigate(pageName: "Checkout")
+    Noibu.shared.addCustomAttribute(name: "checkout.step", value: "shipping")
+}
+```
+
 #### 3.5.3 Limits & Validation
 
 The Noibu iOS SDK enforces the following validation rules for Custom Attributes:
@@ -514,5 +541,138 @@ Within the Noibu dashboard, teams can:
 
 By combining automatic interaction capture with explicit screen and action tagging, Noibu provides a clear and actionable view of real user behavior.
 
+### 3.9 Custom Errors
 
+The Noibu iOS SDK allows you to manually report custom errors to enrich session replay analysis and correlate failures with real user journeys.
 
+Custom errors are associated with the **current page visit**, making it easier to understand where and why an issue occurred.
+
+You can report:
+- Simple error messages
+- Swift `Error`
+- `NSError`
+- Optional stack traces
+- Optional custom attributes (metadata)
+
+#### 3.9.1 Report a Custom Error Message
+
+Use this method to manually report a custom error message.
+
+```swift
+Noibu.shared.addError(
+    message: "Payment processing failed"
+)
+
+Noibu.shared.addError(
+    message: "Network timeout",
+    stack: Thread.callStackSymbols.joined(separator: "\n")
+)
+```
+
+Parameters
+- message (required): A non-empty string describing the error.
+- stack (optional): A custom stack trace string. If omitted, you may generate one manually.
+- attributes (optional): Additional metadata describing the error context.
+
+```swift
+Noibu.shared.addError(
+    message: "Checkout API returned 500",
+    stack: Thread.callStackSymbols.joined(separator: "\n"),
+    attributes: [
+        "screen": "Checkout",
+        "request_type": "POST",
+        "retry_count": "1"
+    ]
+)
+```
+
+#### 3.9.2 Report a Swift Error
+You can report any Swift `Error` directly. The SDK will extract the localized description and automatically attach the current call stack.
+
+```swift
+do {
+    try riskyOperation()
+} catch {
+    Noibu.shared.addError(
+        error,
+        attributes: [
+            "screen": "Home",
+            "operation": "FetchProducts"
+        ]
+    )
+}
+```
+
+#### 3.9.3 Report an NSError
+
+You can also report an `NSError` directly. The SDK extracts the localized description and attaches a stack trace automatically.
+
+```swift
+let error = NSError(
+    domain: "com.myapp.payment",
+    code: 1001,
+    userInfo: [
+        NSLocalizedDescriptionKey: "Payment gateway timeout"
+    ]
+)
+
+Noibu.shared.addError(
+    error,
+    attributes: [
+        "screen": "Checkout",
+        "payment_provider": "Stripe"
+    ]
+)
+```
+
+#### 3.9.4 Error Attributes (Metadata)
+
+Custom attributes allow you to attach structured metadata to an error.
+
+This is useful for:
+- Identifying the screen where the error occurred
+- Attaching request types (GET / POST)
+- Including feature flags
+- Capturing retry counts
+- Identifying product IDs or cart totals
+
+Example:
+
+```swift
+Noibu.shared.addError(
+    message: "Invalid promo code",
+    attributes: [
+        "screen": "Checkout",
+        "promo_code": "SUMMER24",
+        "cart_value": "199.99"
+    ]
+)
+```
+
+Error attributes should:
+- Be short and descriptive
+- Avoid personal or sensitive data
+- Represent debugging context rather than full payloads
+
+#### 3.9.5 Best Practices
+
+To ensure clean and useful error tracking:
+
+- Always call `didNavigate(pageName:)` when switching screens so errors attach to the correct page.
+- Keep error messages consistent and descriptive.
+- Avoid logging sensitive data (emails, payment details, personal identifiers).
+- Use attributes for structured debugging context instead of long messages.
+- Do not spam errors inside tight loops or rapidly repeating UI events.
+
+Good Example:
+```swift
+Noibu.shared.didNavigate(pageName: "Checkout")
+
+Noibu.shared.addError(
+    message: "Payment declined",
+    attributes: [
+        "screen": "Checkout",
+        "payment_method": "CreditCard"
+    ]
+)
+```
