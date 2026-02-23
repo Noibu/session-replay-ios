@@ -220,7 +220,6 @@ struct MyApp: App {
     init() {
         let config = NoibuConfig(
             domain: "https://mobile.native.noibu.com",
-            sampleRate: 100.0,
             privacyMode: .maskSensitive
         )
 
@@ -245,25 +244,13 @@ The SDK is configured using `NoibuConfig`.
 ```swift
 public struct NoibuConfig {
     public let domain: String
-    public let environment: String
-    public let sampleRate: Double
     public let privacyMode: NoibuPrivacy
-    public let firstPartyHosts: [String]
 }
 ```
 
 #### domain (required)
 This value must match the Noibu environment your project is configured for.
 Using an incorrect domain may result in sessions not appearing in the dashboard.
-
-#### environment (optional, default: "test")
-A string label used to separate environments (e.g. production, staging, development, test).
-
-#### sampleRate (optional, default: 100.0)
-Controls sampling for session replay collection.
-- 100.0 = capture 100% of sessions
-- 50.0 = capture ~50% of sessions
--  0.0 = disable replay collection
 
 #### privacyMode (optional, default: .maskSensitive)
 Controls how the SDK handles sensitive UI data.
@@ -273,18 +260,12 @@ Available values:
 - .maskSensitive — mask sensitive inputs (recommended default)
 - .allowAll — allow full text capture (use with caution)
 
-#### firstPartyHosts (optional, default: [])
-An optional list of first-party hostnames used for internal classification and processing.
-
 #### Full configuration example
 
 ```swift
 let config = NoibuConfig(
     domain: "https://mobile.native.noibu.com",
-    environment: "staging",
-    sampleRate: 50.0,
-    privacyMode: .maskSensitive,
-    firstPartyHosts: ["api.noibu.test"]
+    privacyMode: .maskSensitive
 )
 
 Noibu.shared.initialize(configuration: config)
@@ -676,3 +657,4 @@ Noibu.shared.addError(
     ]
 )
 ```
+
