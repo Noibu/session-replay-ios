@@ -229,7 +229,6 @@ struct MyApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .noibuSessionReplayWrapper()
         }
     }
 }
@@ -286,7 +285,6 @@ if Noibu.shared.isInitialized {
 ## 3. Session Replay & User Interactions
 
 The Noibu iOS SDK automatically enables Session Replay when `Noibu.shared.initialize()` is called.  
-However, to correctly capture SwiftUI navigation, view transitions, and interaction flows, the app must also wrap its root view with `.noibuSessionReplayWrapper()`.
 
 Session Replay runs on top of a native replay engine fully integrated and managed internally by the Noibu SDK.
 
