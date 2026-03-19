@@ -56,7 +56,7 @@ Add the Noibu SDK to the `dependencies` section:
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        from: "0.5.0"
+        from: "<latest-stable-version>"
     )
 ]
 ```
@@ -108,7 +108,7 @@ To allow updates to any newer compatible version:
 ```swift
 .package(
     url: "https://github.com/Noibu/session-replay-ios.git",
-    from: "0.5.0"
+    from: "<latest-stable-version>"
 )
 ```
 
@@ -117,7 +117,7 @@ To pin the SDK to a specific version:
 ```swift
 .package(
     url: "https://github.com/Noibu/session-replay-ios.git",
-    exact: "0.5.0"
+    exact: "<latest-stable-version>"
 )
 ```
 
@@ -155,7 +155,7 @@ If you added the SDK manually in `Package.swift`, remove the dependency entry:
 // Remove this line from dependencies:
 .package(
     url: "https://github.com/Noibu/session-replay-ios.git",
-    from: "0.5.0"
+    from: "<latest-stable-version>"
 )
 ```
 
@@ -196,7 +196,7 @@ To start the SDK, create a `NoibuConfig` and pass it into `initialize(configurat
 import NoibuSessionReplay
 
 let config = NoibuConfig(
-    domain: "https://mobile.native.noibu.com"
+    domain: "<your-domain>"
 )
 
 Noibu.shared.initialize(configuration: config)
@@ -219,7 +219,7 @@ struct MyApp: App {
 
     init() {
         let config = NoibuConfig(
-            domain: "https://mobile.native.noibu.com",
+            domain: "<your-domain>",
             privacyMode: .maskSensitive
         )
 
@@ -263,7 +263,7 @@ Available values:
 
 ```swift
 let config = NoibuConfig(
-    domain: "https://mobile.native.noibu.com",
+    domain: "<your-domain>",
     privacyMode: .maskSensitive
 )
 
