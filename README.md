@@ -1,4 +1,4 @@
-# Noibu iOS SDK Guide (SwiftUI)
+# Noibu iOS SDK Guide
 
 ## Table of Contents
 
@@ -6,11 +6,11 @@
 - [2. Installation](#2-installation)
 - [3. Configuration](#3-configuration)
 - [4. Initialization](#4-initialization)
-- [5. Session Replay & User Interactions](#5-session-replay--user-interactions)
-- [6. Page Navigation](#6-page-navigation)
-- [7. Error Reporting](#7-error-reporting)
-- [8. Network Monitoring](#8-network-monitoring)
-- [9. WebView Support](#9-webview-support)
+- [5. Page Navigation](#5-page-navigation)
+- [6. Error Reporting](#6-error-reporting)
+- [7. Network Monitoring](#7-network-monitoring)
+- [8. WebView Support](#8-webview-support)
+- [9. View Tagging](#9-view-tagging)
 - [10. Custom Attributes](#10-custom-attributes)
 - [11. Privacy & Security](#11-privacy--security)
 - [12. Lifecycle Management](#12-lifecycle-management)
@@ -20,43 +20,35 @@
 ## 1. Requirements
 
 - **Minimum iOS**: 16.0
-- **Xcode**: 15.0+
 - **Swift**: 5.9+
+- **Xcode**: 15.0+
+- **Dependency manager**: Swift Package Manager **or** CocoaPods
 
 ---
 
 ## 2. Installation
 
-### 2.1 Adding the SDK via Swift Package Manager (Xcode UI)
+The SDK is distributed as a self-contained binary XCFramework that statically bundles all of its internal dependencies — no additional packages or pods are required.
 
-1. Open your project in Xcode.
-2. In the menu bar, go to **File → Add Package Dependencies…**
-3. In the search field, paste the Noibu SDK URL:
-   ```
-   https://github.com/Noibu/session-replay-ios.git
-   ```
-4. Click **Add**. Xcode will resolve the package and show available versions.
-5. Under **Dependency Rule**, choose one of:
-   - **Up to Next Major Version** (recommended)
-   - **Exact Version** (if you need strict reproducibility)
-6. Select the latest stable version of the SDK.
-7. In **Add to Project**, select your app target.
-8. Click **Add Package**.
+### Swift Package Manager (Xcode UI)
 
-### 2.2 Package.swift Integration (Manual)
+1. In Xcode, go to **File → Add Package Dependencies…**
+2. Enter the package URL: `https://github.com/Noibu/session-replay-ios.git`
+3. Choose **Exact Version** and select `0.1.0-rc.1` (pre-release versions require `Exact Version`).
+4. Add the package to your app target.
 
-Add the Noibu SDK to the `dependencies` section:
+### Swift Package Manager (`Package.swift`)
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        from: "<latest-stable-version>"
+        exact: "0.1.0-rc.1"
     )
 ]
 ```
 
-Reference the Noibu product inside your target:
+Then reference the product in your target:
 
 ```swift
 .target(
@@ -67,52 +59,27 @@ Reference the Noibu product inside your target:
 )
 ```
 
-Then run:
+### CocoaPods
+
+Add to your `Podfile`:
+
+```ruby
+platform :ios, '16.0'
+use_frameworks!
+
+target 'YourApp' do
+  pod 'NoibuSessionReplay', '~> 0.1.0-rc.1'
+end
+```
+
+Then install and open the generated workspace:
 
 ```bash
-swift package update
-swift package resolve
+pod install --repo-update
+open YourApp.xcworkspace
 ```
 
-### 2.3 Updating the SDK
-
-**Via Xcode:**
-1. Select your project in the Project Navigator.
-2. Go to the **Package Dependencies** tab.
-3. Locate `NoibuSessionReplay` and update the version.
-
-**Via Package.swift:**
-
-```swift
-.package(
-    url: "https://github.com/Noibu/session-replay-ios.git",
-    from: "<latest-stable-version>"
-)
-```
-
-Then run:
-
-```bash
-swift package update
-swift package resolve
-```
-
-### 2.4 Removing the SDK
-
-**Via Xcode:**
-1. Select your project in the Project Navigator.
-2. Open the **Package Dependencies** tab.
-3. Right-click `NoibuSessionReplay` and select **Remove**.
-4. Delete any `import NoibuSessionReplay` statements from your code.
-5. Clean the build folder via **Product → Clean Build Folder**.
-
-**Via Package.swift:**
-
-Remove the dependency entry and the product from your target, then run:
-
-```bash
-swift package update
-```
+> Always open `.xcworkspace`, not `.xcodeproj`, when using CocoaPods.
 
 ---
 
@@ -120,43 +87,33 @@ swift package update
 
 ### NoibuConfig
 
-The SDK is configured via `NoibuConfig`. All parameters:
+The SDK is configured via `NoibuConfig`. Parameters:
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `domain` | `String` | **Yes** | - | Your Noibu domain endpoint (provided by Noibu) |
-| `privacyMode` | `NoibuPrivacy` | No | `.maskSensitive` | Privacy level for session recording |
+| `environment` | `String` | No | `"test"` | Label to separate environments. _Reserved — not yet applied to the recording pipeline._ |
+| `sampleRate` | `Double` | No | `100.0` | Percentage of sessions to capture (0–100). _Reserved — current builds capture every session regardless of value._ |
+| `privacyMode` | `NoibuPrivacyMode` | No | `.maskSensitive` | Privacy level for session recording. _Reserved — current builds use `.maskSensitive` regardless of value._ |
+| `firstPartyHosts` | `[String]` | No | `[]` | Hostnames intended for first-party network classification. _Reserved — currently unused._ |
+
+> **Note**: Only `domain` affects current behavior. The other parameters are part of the API surface for forward compatibility and will become functional in upcoming releases. Set them now if you'd like; they'll start being honored without a code change once support lands.
 
 ### Privacy Modes
 
 | Mode | Description |
 |------|-------------|
 | `.allowAll` | All content is visible in recordings |
-| `.maskSensitive` | Masks passwords and other sensitive inputs (recommended) |
+| `.maskSensitive` | Masks passwords, credit card fields, and other sensitive inputs (default) |
 | `.maskAll` | Masks all text content |
 
 ---
 
 ## 4. Initialization
 
-Initialize the SDK as early as possible in your app's lifecycle to ensure full session capture.
-
 ### Basic Setup
 
-```swift
-import NoibuSessionReplay
-
-let config = NoibuConfig(
-    domain: "<your-domain.noibu.com>",
-    privacyMode: .maskSensitive
-)
-
-Noibu.shared.initialize(configuration: config)
-```
-
-### SwiftUI App
-
-For SwiftUI apps, initialize inside the `init()` of your `@main` App struct. This ensures the SDK is running before your first view appears:
+Initialize the SDK as early as possible in your app's lifecycle. For SwiftUI apps, do this inside the `init()` of your `@main App`:
 
 ```swift
 import SwiftUI
@@ -167,9 +124,11 @@ struct MyApp: App {
 
     init() {
         let config = NoibuConfig(
-            domain: "<your-domain.noibu.com>",
+            domain: "https://mobile.native.noibu.com",
+            sampleRate: 100.0,
             privacyMode: .maskSensitive
         )
+
         Noibu.shared.initialize(configuration: config)
     }
 
@@ -177,6 +136,31 @@ struct MyApp: App {
         WindowGroup {
             ContentView()
         }
+    }
+}
+```
+
+### UIKit Setup
+
+For UIKit apps, initialize in your `AppDelegate`'s `application(_:didFinishLaunchingWithOptions:)`:
+
+```swift
+import UIKit
+import NoibuSessionReplay
+
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        let config = NoibuConfig(
+            domain: "https://mobile.native.noibu.com"
+        )
+
+        Noibu.shared.initialize(configuration: config)
+        return true
     }
 }
 ```
@@ -191,73 +175,15 @@ if Noibu.shared.isInitialized {
 
 ---
 
-## 5. Session Replay & User Interactions
+## 5. Page Navigation
 
-Session Replay is enabled automatically when `Noibu.shared.initialize()` is called. No additional configuration is required.
+### Automatic Tracking
 
-### 5.1 Automatically Captured Data
-
-The following data is captured automatically without any additional instrumentation:
-
-- Screen transitions (SwiftUI view changes)
-- Button taps and touch interactions
-- Gestures and scroll events
-- Slider changes
-- Navigation triggers (NavigationLink / NavigationStack)
-- View appearance and disappearance events
-- Layout and UI updates
-- Error events originating from the UI layer
-
-### 5.2 Tracking Screens
-
-Label important screens using the `.trackView(name:)` modifier:
-
-```swift
-var body: some View {
-    VStack {
-        Text("Hello World")
-    }
-    .trackView(name: "Main ContentView")
-}
-```
-
-This gives the replay viewer a clear, human-readable screen name in the session timeline.
-
-### 5.3 Tracking User Actions
-
-Explicitly annotate meaningful user actions using `.trackTapAction(name:)`:
-
-```swift
-Button(action: {
-    withAnimation { showContent.toggle() }
-}) {
-    Text("Toggle content")
-}
-.trackTapAction(name: "Toggle content button")
-```
-
-This is useful for:
-- Primary call-to-action buttons
-- Navigation triggers
-- Feature toggles
-- Sliders or configuration changes
-
-### 5.4 Performance Considerations
-
-The Noibu iOS SDK is optimized to minimize impact on app performance:
-
-- **Delta-based snapshots** — only visual differences are recorded, reducing CPU and memory usage
-- **Event batching** — UI interactions are grouped efficiently
-- **Background uploads** — replay data is synced when the device is idle
-- **Low memory footprint** — thanks to native replay engine optimizations
-
----
-
-## 6. Page Navigation
+For SwiftUI apps, screen transitions and navigation events are captured automatically. UIKit screen transitions tied to `UIViewController` lifecycle are also tracked automatically.
 
 ### Manual Page Tracking
 
-Call `didNavigate()` when the user navigates to a new screen. This splits the session replay into distinct pages and ensures events are associated with the correct page visit:
+For custom navigation flows, modals, tab switches, or deep links, call `didNavigate()` when the user moves to a new page:
 
 ```swift
 // With a page name
@@ -267,83 +193,42 @@ Noibu.shared.didNavigate(pageName: "ProductDetails")
 Noibu.shared.didNavigate()
 ```
 
-### Tab Navigation
-
-For tab-based navigation, call `didNavigate` when the selected tab changes:
-
-```swift
-TabView(selection: $selectedTab) {
-    // ...
-}
-.onChange(of: selectedTab) { _, newTab in
-    Noibu.shared.didNavigate(pageName: pageName(for: newTab))
-}
-
-private func pageName(for tab: Tab) -> String {
-    switch tab {
-    case .home: return "Home"
-    case .products: return "Products"
-    case .cart: return "Cart"
-    case .settings: return "Settings"
-    }
-}
-```
-
-### NavigationLink Tracking
-
-For NavigationLink transitions, call `didNavigate` in `.onAppear` of the destination view:
-
-```swift
-NavigationLink {
-    ProductDetailView(product: product)
-        .onAppear {
-            Noibu.shared.didNavigate(pageName: "ProductDetail")
-        }
-} label: {
-    Text("View Details")
-}
-```
-
-### When to Call `didNavigate()`
-
-- Navigation to a new screen
+**When to call `didNavigate(pageName:)`:**
 - Tab switches that represent distinct pages
-- Modal or bottom sheet presentations
+- Modal or sheet presentations that should be treated as separate pages
+- Custom routing flows that don't go through a standard navigation stack
 - Deep link handling
 
-> **Important**: Always call `didNavigate()` when switching screens so that errors and custom attributes are associated with the correct page.
+**What happens:**
+1. Pending replay data is flushed for the current page
+2. A new full snapshot is captured
+3. Replay state is reset for fresh transformation
+4. A new page visit is created in analytics
 
 ---
 
-## 7. Error Reporting
+## 6. Error Reporting
 
-Report errors to Noibu for tracking and analysis. Errors are associated with the current page visit.
+Report errors to Noibu to correlate them with the current session and page visit. Three overloads are supported.
 
-### Reporting a Custom Error
+### Custom Error Message
 
 ```swift
-// With a message only
-Noibu.shared.addError(message: "Payment processing failed")
-
-// With a message and stack trace
 Noibu.shared.addError(
-    message: "Network timeout",
-    stack: Thread.callStackSymbols.joined(separator: "\n")
+    message: "Payment processing failed"
 )
 
-// With attributes for additional context
 Noibu.shared.addError(
-    message: "Checkout API returned 500",
+    message: "Network timeout",
     stack: Thread.callStackSymbols.joined(separator: "\n"),
     attributes: [
         "screen": "Checkout",
-        "request_type": "POST",
-        "retry_count": "1"
+        "request_type": "POST"
     ]
 )
 ```
 
-### Reporting a Swift Error
+### Swift `Error`
 
 ```swift
 do {
@@ -351,17 +236,12 @@ do {
 } catch {
     Noibu.shared.addError(
         error,
-        attributes: [
-            "screen": "Home",
-            "operation": "FetchProducts"
-        ]
+        attributes: ["screen": "Home"]
     )
 }
 ```
 
-The SDK automatically extracts the localized description and attaches the current call stack.
-
-### Reporting an NSError
+### `NSError`
 
 ```swift
 let error = NSError(
@@ -372,80 +252,76 @@ let error = NSError(
 
 Noibu.shared.addError(
     error,
-    attributes: [
-        "screen": "Checkout",
-        "payment_provider": "Stripe"
-    ]
+    attributes: ["screen": "Checkout"]
 )
 ```
 
 ### API Reference
 
-| Method | Parameters | Description |
-|--------|-----------|-------------|
-| `addError(message:stack:attributes:)` | `message: String`, `stack: String?`, `attributes: [String: String]` | Report a custom error message |
-| `addError(_:attributes:)` | `error: Error`, `attributes: [String: String]` | Report a Swift Error |
-| `addError(_:attributes:)` | `error: NSError`, `attributes: [String: String]` | Report an NSError |
-
-### Best Practices
-
-- Always call `didNavigate(pageName:)` before reporting errors so they attach to the correct page.
-- Keep error messages consistent and descriptive.
-- Avoid logging sensitive data (emails, payment details, personal identifiers).
-- Use `attributes` for structured debugging context rather than long messages.
-- Do not report errors inside tight loops or rapidly repeating UI events.
+| Method | Description |
+|--------|-------------|
+| `addError(message:stack:attributes:)` | Report a custom error message with an optional stack trace |
+| `addError(_:attributes:)` (Swift `Error`) | Report a caught Swift error |
+| `addError(_:attributes:)` (`NSError`) | Report an `NSError` |
 
 ---
 
-## 8. Network Monitoring
+## 7. Network Monitoring
 
-The Noibu iOS SDK automatically captures HTTP request and response data via a custom `URLProtocol` interceptor. No additional setup is required — the interceptor is installed automatically during `initialize()`.
+The SDK captures HTTP request and response metadata automatically. There is **no setup step** — calling `Noibu.shared.initialize(configuration:)` registers the necessary `URLProtocol` and enables Datadog's URLSession tracking for you.
 
 ### What Is Captured
 
 | Data | Details |
 |------|---------|
-| Request metadata | HTTP method, URL, request size |
-| Response metadata | Status code, response size, duration |
-| Request/response headers | All headers (sensitive headers are automatically redacted) |
-| Request/response bodies | Text-based content types only (JSON, XML, form data) |
+| Request metadata | HTTP method, URL |
+| Response metadata | Status code, duration |
 | Errors | Network failures and exceptions |
 
-### Privacy
+### Custom `URLSession` Instances
 
-The following headers are automatically redacted:
+Requests made through `URLSession.shared` are observed automatically. For custom `URLSession` instances that override `protocolClasses`, you must include `NoibuURLProtocol` explicitly:
 
-`authorization`, `cookie`, `set-cookie`, `x-auth-token`, `x-api-key`, `proxy-authorization`, `x-forwarded-for`
+```swift
+import NoibuSessionReplay
+
+let config = URLSessionConfiguration.default
+config.protocolClasses = [NoibuURLProtocol.self] + (config.protocolClasses ?? [])
+let session = URLSession(configuration: config)
+```
+
+### Manually Re-installing
+
+If you need to force re-registration of the URLProtocol (rare — typically only needed if another library deregisters it), call:
+
+```swift
+NoibuHTTPInterceptor.shared.install()
+```
+
+This is normally unnecessary because the SDK calls it during `initialize(configuration:)`.
 
 ---
 
-## 9. WebView Support
+## 8. WebView Support
 
-The Noibu SDK can capture session replay data from `WKWebView`, rendering WebView content as part of the same mobile session recording.
-
-### Prerequisites
-
-- JavaScript must be enabled on the WebView.
-- Call `enable()` **before** loading any URL.
-- Call `enable()` **after** `Noibu.shared.initialize()`.
+The SDK can capture session replay data from WKWebViews, rendering web content as part of the same mobile session recording. The SDK injects a DOM recorder into the WebView — no setup is required on the web page itself.
 
 ### Setup
+
+Call `NoibuWebViewTracking.enable(_:)` after creating your `WKWebView` and **before** loading any URL:
 
 ```swift
 import WebKit
 import NoibuSessionReplay
 
-let webView = WKWebView(frame: .zero)
-webView.configuration.preferences.javaScriptEnabled = true
-
+let webView = WKWebView()
 NoibuWebViewTracking.enable(webView)
-
 webView.load(URLRequest(url: URL(string: "https://example.com")!))
 ```
 
 ### SwiftUI
 
-For SwiftUI apps, use `UIViewRepresentable` to host the WebView:
+Wrap the WKWebView in a `UIViewRepresentable`:
 
 ```swift
 import SwiftUI
@@ -457,30 +333,71 @@ struct NoibuWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = WKWebView()
-        webView.configuration.preferences.javaScriptEnabled = true
         NoibuWebViewTracking.enable(webView)
-        webView.load(URLRequest(url: url))
         return webView
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        webView.load(URLRequest(url: url))
+    }
 }
 ```
 
-### How It Works
+### Disabling
 
-1. The SDK injects a DOM recorder into every page loaded in the WebView.
-2. DOM snapshots and mutations are captured and routed through a native bridge.
-3. Records are written directly to the replay outbox and sent alongside native snapshots.
-4. WebView replay data is associated with the current native page view.
+To stop tracking a specific WebView:
 
-> **Note**: Call `didNavigate()` before presenting a new screen containing a WebView to ensure replay data is associated with the correct page.
+```swift
+NoibuWebViewTracking.disable(webView)
+```
+
+### Important Notes
+
+- Call `enable(_:)` **before** loading any URL — late attachment will miss the initial page load.
+- Call `enable(_:)` **after** `Noibu.shared.initialize(...)` — the SDK must already be running.
+- Each WebView instance is tracked independently, so multiple WebViews on the same screen are recorded with distinct identities.
+
+---
+
+## 9. View Tagging
+
+For SwiftUI apps, two view modifiers let you label important screens and actions in the replay timeline.
+
+### Tracking Screens
+
+```swift
+import NoibuSessionReplay
+
+var body: some View {
+    VStack {
+        Text("Hello World")
+    }
+    .trackView(name: "ContentView")
+}
+```
+
+### Tracking User Actions
+
+```swift
+Button(action: {
+    withAnimation { showContent.toggle() }
+}) {
+    Text(showContent ? "Hide content" : "Show content")
+}
+.trackTapAction(name: "ToggleContentButton")
+```
+
+### Naming Best Practices
+
+- Use clear, descriptive names focused on user intent (`"AddToCart"`, not `"Button123"`).
+- Stay consistent across similar interactions.
+- Avoid including personal or sensitive data in tag names.
 
 ---
 
 ## 10. Custom Attributes
 
-Add metadata to sessions for filtering and analysis in the Noibu dashboard.
+Add metadata to sessions for filtering and analysis in the Noibu dashboard. Attributes are session-scoped and should describe context that changes infrequently (feature flags, A/B variants, environment, build metadata, etc.).
 
 ### Adding Attributes
 
@@ -488,55 +405,6 @@ Add metadata to sessions for filtering and analysis in the Noibu dashboard.
 Noibu.shared.addCustomAttribute(name: "customerId", value: "12345")
 Noibu.shared.addCustomAttribute(name: "orderId", value: "ORD-98765")
 Noibu.shared.addCustomAttribute(name: "appVersion", value: "2.1.0")
-```
-
-### Recommended Usage Patterns
-
-**When a screen appears:**
-
-```swift
-.onAppear {
-    Noibu.shared.addCustomAttribute(name: "screen.name", value: "ContentView")
-    Noibu.shared.addCustomAttribute(name: "screen.variant", value: "main")
-}
-```
-
-**When application state changes:**
-
-```swift
-Toggle(isOn: $isSwitchOn) {
-    Text("Debug mode")
-}
-.onChange(of: isSwitchOn) { value in
-    Noibu.shared.addCustomAttribute(
-        name: "debug.enabled",
-        value: value ? "true" : "false"
-    )
-}
-```
-
-**Before a meaningful user action:**
-
-```swift
-Button(action: {
-    Noibu.shared.addCustomAttribute(
-        name: "ui.toggle_content",
-        value: showContent ? "hide" : "show"
-    )
-    withAnimation { showContent.toggle() }
-}) {
-    Text("Toggle content")
-}
-.trackTapAction(name: "Toggle content button")
-```
-
-**Pairing with Page Splitting:**
-
-```swift
-.onAppear {
-    Noibu.shared.didNavigate(pageName: "Checkout")
-    Noibu.shared.addCustomAttribute(name: "checkout.step", value: "shipping")
-}
 ```
 
 ### Validation Rules
@@ -548,21 +416,15 @@ Button(action: {
 | Attribute value length | 1–50 characters |
 | Duplicate names | Not allowed |
 
-### Return Values
+The method returns `true` on success and `false` if the attribute was rejected (limit hit, invalid input, duplicate, SDK not initialized).
 
-`addCustomAttribute` returns a `Bool`:
+### Example with Result Check
 
-| Result | Description |
-|--------|-------------|
-| `true` | Attribute added successfully |
-| `false` | Attribute was rejected (SDK not initialized or validation failed) |
-
-### Naming Best Practices
-
-- Use clear, descriptive names (e.g. `"screen.name"`, `"checkout.step"`)
-- Focus on session context, not individual events
-- Keep names consistent across similar screens
-- Avoid including personal or sensitive data in attribute names or values
+```swift
+if !Noibu.shared.addCustomAttribute(name: "customerId", value: customerId) {
+    print("Failed to attach customerId attribute to session")
+}
+```
 
 ---
 
@@ -570,73 +432,58 @@ Button(action: {
 
 ### Privacy Mode Selection
 
-Choose the appropriate privacy mode based on your app's requirements:
+Choose the privacy mode based on your app's data sensitivity:
 
 ```swift
-// For general apps — masks only sensitive fields (default)
+// General apps — masks only sensitive fields (default)
 privacyMode: .maskSensitive
 
-// For apps handling highly sensitive data
+// Apps handling highly sensitive data
 privacyMode: .maskAll
 
-// For internal/debug builds only
+// Internal/debug builds only
 privacyMode: .allowAll
 ```
 
 ### Data Storage
 
-- Session data is streamed to Noibu's servers
-- Local data is stored temporarily in the app's cache directory
-- Data is automatically cleared after successful upload
+- Session data is streamed to Noibu's servers.
+- Local data is buffered temporarily in the app's caches directory.
+- Data is cleared automatically after successful upload.
 
 ---
 
 ## 12. Lifecycle Management
 
-### Automatic Background Handling
+### One-Shot Initialization
 
-The SDK automatically handles app lifecycle:
-- **App goes to background**: Pending data is flushed
-- **App returns after 30+ seconds**: A new page view is started automatically
+The SDK is intended to run for the lifetime of the app process. Call `Noibu.shared.initialize(configuration:)` exactly once during app launch — subsequent calls are no-ops if the SDK is already configured. The SDK persists across foreground/background transitions and stops only when the app process terminates.
 
-### Shutdown
-
-To completely stop the SDK (e.g., user revokes consent):
-
-```swift
-Noibu.shared.shutdown()
-```
-
-This will:
-- Stop all recording
-- Flush pending data
-- Clear custom attributes
-- Reset the initialized state
+The current build does not expose a public `shutdown()` method.
 
 ---
 
 ## Troubleshooting
 
+### Verify Installation
+
+Check the Xcode console for SDK initialization log lines:
+
+```
+filter your device log by: "Noibu"
+```
+
 ### Common Issues
 
 | Issue | Solution |
 |-------|----------|
-| No recordings appearing | Verify `domain` is correct and `initialize()` is called before the first view appears |
-| Events not associated with a page | Ensure `didNavigate()` is called on every screen transition |
-| Custom attributes not appearing | Check the 10-attribute limit and verify no duplicate names |
-| WebView content not in replay | Ensure `NoibuWebViewTracking.enable()` is called before loading the URL |
-| Network requests not captured | The interceptor is installed automatically — verify `initialize()` completed successfully |
-| Errors not appearing in dashboard | Verify `addError()` is called after `initialize()` and after `didNavigate()` |
-
-### Verify Initialization
-
-```swift
-if Noibu.shared.isInitialized {
-    print("Noibu SDK is running")
-} else {
-    print("Noibu SDK is not initialized")
-}
-```
+| No recordings appearing | Verify `domain` is correct and reachable from the device |
+| `pod install` can't find spec | Run `pod install --repo-update`, or clear cache with `rm -rf ~/Library/Caches/CocoaPods` |
+| Build error after CocoaPods install | Open `.xcworkspace`, not `.xcodeproj` |
+| Network requests not captured | Ensure `NoibuHTTPInterceptor.shared.install()` is called and the `URLSession` does not exclude default protocols |
+| WebView content not in replay | Ensure `NoibuWebViewTracking.enable(_:)` is called **before** loading any URL |
+| Errors not appearing | Verify `addError(...)` is called after `initialize(configuration:)` |
+| Pre-release version not resolvable via SPM | SPM requires `exact:` for pre-release versions; `from:` won't match them |
 
 ---
 
@@ -644,8 +491,7 @@ if Noibu.shared.isInitialized {
 
 Need help? Contact your Noibu solutions engineer with:
 - SDK version
-- iOS version and device type
+- iOS version
 - Xcode version
 - Initialization code snippet
-- Relevant console output
-
+- Console log output
