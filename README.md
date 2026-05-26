@@ -97,7 +97,7 @@ The SDK is configured via `NoibuConfig`. Parameters:
 | `privacyMode` | `NoibuPrivacyMode` | No | `.maskSensitive` | Privacy level for session recording. _Reserved — current builds use `.maskSensitive` regardless of value._ |
 | `firstPartyHosts` | `[String]` | No | `[]` | Hostnames intended for first-party network classification. _Reserved — currently unused._ |
 
-> **Note**: Only `domain` affects current behavior. The other parameters are part of the API surface for forward compatibility and will become functional in upcoming releases. Set them now if you'd like; they'll start being honored without a code change once support lands.
+> **Note**: Only `domain` affects current behavior. The other parameters are part of the API surface for forward compatibility and will become functional in upcoming releases.
 
 ### Privacy Modes
 
@@ -111,9 +111,9 @@ The SDK is configured via `NoibuConfig`. Parameters:
 
 ## 4. Initialization
 
-### Basic Setup
+### SwiftUI
 
-Initialize the SDK as early as possible in your app's lifecycle. For SwiftUI apps, do this inside the `init()` of your `@main App`:
+Initialize inside the `init()` of your `@main App`:
 
 ```swift
 import SwiftUI
@@ -124,11 +124,10 @@ struct MyApp: App {
 
     init() {
         let config = NoibuConfig(
-            domain: "https://mobile.native.noibu.com",
+            domain: "[your domain]",
             sampleRate: 100.0,
             privacyMode: .maskSensitive
         )
-
         Noibu.shared.initialize(configuration: config)
     }
 
@@ -140,9 +139,9 @@ struct MyApp: App {
 }
 ```
 
-### UIKit Setup
+### UIKit
 
-For UIKit apps, initialize in your `AppDelegate`'s `application(_:didFinishLaunchingWithOptions:)`:
+Initialize in `AppDelegate`'s `application(_:didFinishLaunchingWithOptions:)`, before the window and root view controller are set up:
 
 ```swift
 import UIKit
@@ -156,14 +155,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         let config = NoibuConfig(
-            domain: "https://mobile.native.noibu.com"
+            domain: "[your domain]",
+            privacyMode: .maskSensitive
         )
-
         Noibu.shared.initialize(configuration: config)
         return true
     }
 }
 ```
+
+> **UIKit note**: Do not initialize in `SceneDelegate.scene(_:willConnectTo:)` — that method is called after `didFinishLaunchingWithOptions` and may miss early network requests.
 
 ### Checking Initialization Status
 
@@ -179,24 +180,52 @@ if Noibu.shared.isInitialized {
 
 ### Automatic Tracking
 
-For SwiftUI apps, screen transitions and navigation events are captured automatically. UIKit screen transitions tied to `UIViewController` lifecycle are also tracked automatically.
+- **SwiftUI**: screen transitions and navigation events are captured automatically.
+- **UIKit**: `UIViewController` lifecycle events are also tracked automatically. However, for tab switches, modals, and custom navigation flows, you should call `didNavigate()` manually to ensure clean page splits in the session replay.
 
 ### Manual Page Tracking
 
-For custom navigation flows, modals, tab switches, or deep links, call `didNavigate()` when the user moves to a new page:
+Call `didNavigate()` when the user moves to a new page:
 
 ```swift
-// With a page name
 Noibu.shared.didNavigate(pageName: "ProductDetails")
+```
 
-// Without a page name (uses default)
-Noibu.shared.didNavigate()
+#### SwiftUI — Tab switches
+
+```swift
+// In your root view, observe tab changes
+.onChange(of: selectedTab) { _, newTab in
+    Noibu.shared.didNavigate(pageName: newTab.title)
+}
+```
+
+#### UIKit — Tab switches
+
+Call `didNavigate()` in the tab bar delegate, whenever the active tab changes:
+
+```swift
+func tabBar(_ tabBar: CustomTabBarView, didSelect tab: AppTab) {
+    Noibu.shared.didNavigate(pageName: tab.title)
+    showTab(tab)
+}
+```
+
+#### UIKit — Screen pushes
+
+Call `didNavigate()` in `viewDidLoad` or `viewWillAppear` for each view controller:
+
+```swift
+override func viewDidLoad() {
+    super.viewDidLoad()
+    Noibu.shared.didNavigate(pageName: "Cart")
+}
 ```
 
 **When to call `didNavigate(pageName:)`:**
 - Tab switches that represent distinct pages
-- Modal or sheet presentations that should be treated as separate pages
-- Custom routing flows that don't go through a standard navigation stack
+- Modal or sheet presentations
+- Custom routing flows outside the standard navigation stack
 - Deep link handling
 
 **What happens:**
@@ -209,22 +238,17 @@ Noibu.shared.didNavigate()
 
 ## 6. Error Reporting
 
-Report errors to Noibu to correlate them with the current session and page visit. Three overloads are supported.
+Report errors to correlate them with the current session and page visit.
 
 ### Custom Error Message
 
 ```swift
-Noibu.shared.addError(
-    message: "Payment processing failed"
-)
+Noibu.shared.addError(message: "Payment processing failed")
 
 Noibu.shared.addError(
     message: "Network timeout",
     stack: Thread.callStackSymbols.joined(separator: "\n"),
-    attributes: [
-        "screen": "Checkout",
-        "request_type": "POST"
-    ]
+    attributes: ["screen": "Checkout", "request_type": "POST"]
 )
 ```
 
@@ -234,10 +258,7 @@ Noibu.shared.addError(
 do {
     try riskyOperation()
 } catch {
-    Noibu.shared.addError(
-        error,
-        attributes: ["screen": "Home"]
-    )
+    Noibu.shared.addError(error, attributes: ["screen": "Home"])
 }
 ```
 
@@ -249,18 +270,14 @@ let error = NSError(
     code: 1001,
     userInfo: [NSLocalizedDescriptionKey: "Payment gateway timeout"]
 )
-
-Noibu.shared.addError(
-    error,
-    attributes: ["screen": "Checkout"]
-)
+Noibu.shared.addError(error, attributes: ["screen": "Checkout"])
 ```
 
 ### API Reference
 
 | Method | Description |
 |--------|-------------|
-| `addError(message:stack:attributes:)` | Report a custom error message with an optional stack trace |
+| `addError(message:stack:attributes:)` | Report a custom error message with optional stack trace |
 | `addError(_:attributes:)` (Swift `Error`) | Report a caught Swift error |
 | `addError(_:attributes:)` (`NSError`) | Report an `NSError` |
 
@@ -268,7 +285,7 @@ Noibu.shared.addError(
 
 ## 7. Network Monitoring
 
-The SDK captures HTTP request and response metadata automatically. There is **no setup step** — calling `Noibu.shared.initialize(configuration:)` registers the necessary `URLProtocol` and enables Datadog's URLSession tracking for you.
+The SDK captures HTTP request and response metadata automatically — calling `Noibu.shared.initialize(configuration:)` registers the necessary `URLProtocol` with no additional setup.
 
 ### What Is Captured
 
@@ -280,7 +297,7 @@ The SDK captures HTTP request and response metadata automatically. There is **no
 
 ### Custom `URLSession` Instances
 
-Requests made through `URLSession.shared` are observed automatically. For custom `URLSession` instances that override `protocolClasses`, you must include `NoibuURLProtocol` explicitly:
+Requests made through `URLSession.shared` are observed automatically. For custom `URLSession` instances that override `protocolClasses`:
 
 ```swift
 import NoibuSessionReplay
@@ -290,38 +307,19 @@ config.protocolClasses = [NoibuURLProtocol.self] + (config.protocolClasses ?? []
 let session = URLSession(configuration: config)
 ```
 
-### Manually Re-installing
-
-If you need to force re-registration of the URLProtocol (rare — typically only needed if another library deregisters it), call:
-
-```swift
-NoibuHTTPInterceptor.shared.install()
-```
-
-This is normally unnecessary because the SDK calls it during `initialize(configuration:)`.
-
 ---
 
 ## 8. WebView Support
 
-The SDK can capture session replay data from WKWebViews, rendering web content as part of the same mobile session recording. The SDK injects a DOM recorder into the WebView — no setup is required on the web page itself.
+The SDK captures session replay data from `WKWebView` instances, rendering web content as part of the same mobile session recording. No setup is required on the web page itself.
 
 ### Setup
 
-Call `NoibuWebViewTracking.enable(_:)` after creating your `WKWebView` and **before** loading any URL:
-
-```swift
-import WebKit
-import NoibuSessionReplay
-
-let webView = WKWebView()
-NoibuWebViewTracking.enable(webView)
-webView.load(URLRequest(url: URL(string: "https://example.com")!))
-```
+Call `NoibuWebViewTracking.enable(_:)` **after** creating the `WKWebView` and **before** loading any URL.
 
 ### SwiftUI
 
-Wrap the WKWebView in a `UIViewRepresentable`:
+Wrap the `WKWebView` in a `UIViewRepresentable`. Call `enable` inside `makeUIView`, before returning the view — never in `updateUIView`, which is called on every re-render:
 
 ```swift
 import SwiftUI
@@ -343,9 +341,45 @@ struct NoibuWebView: UIViewRepresentable {
 }
 ```
 
-### Disabling
+### UIKit
 
-To stop tracking a specific WebView:
+Create the `WKWebView`, call `enable`, then load the URL. The order matters — loading before calling `enable` will miss the initial page:
+
+```swift
+import WebKit
+import NoibuSessionReplay
+
+class WebViewController: UIViewController, WKNavigationDelegate {
+
+    private var webView: WKWebView!
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        webView = WKWebView()
+        webView.navigationDelegate = self
+        webView.translatesAutoresizingMaskIntoConstraints = false
+
+        // Enable tracking BEFORE loading any URL
+        NoibuWebViewTracking.enable(webView)
+
+        view.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+
+        // Load AFTER enable
+        if let url = URL(string: "https://example.com") {
+            webView.load(URLRequest(url: url))
+        }
+    }
+}
+```
+
+### Disabling
 
 ```swift
 NoibuWebViewTracking.disable(webView)
@@ -355,49 +389,68 @@ NoibuWebViewTracking.disable(webView)
 
 - Call `enable(_:)` **before** loading any URL — late attachment will miss the initial page load.
 - Call `enable(_:)` **after** `Noibu.shared.initialize(...)` — the SDK must already be running.
-- Each WebView instance is tracked independently, so multiple WebViews on the same screen are recorded with distinct identities.
+- **UIKit**: do not call `enable` in `viewWillAppear` or `viewDidAppear` — by that point the WebView may have already started loading. Always call it in `viewDidLoad` right after creating the `WKWebView`.
+- Each `WKWebView` instance is tracked independently.
 
 ---
 
 ## 9. View Tagging
 
-For SwiftUI apps, two view modifiers let you label important screens and actions in the replay timeline.
+View tagging lets you label screens and user actions in the replay timeline.
 
-### Tracking Screens
+### SwiftUI
+
+Two view modifiers are available:
 
 ```swift
-import NoibuSessionReplay
-
+// Tag a screen
 var body: some View {
-    VStack {
-        Text("Hello World")
-    }
-    .trackView(name: "ContentView")
+    VStack { ... }
+        .trackView(name: "ProductDetails")
 }
+
+// Tag a tap action
+Button("Add to Cart") {
+    cartStore.add(product)
+}
+.trackTapAction(name: "AddToCart")
 ```
 
-### Tracking User Actions
+### UIKit
+
+`trackView` and `trackTapAction` are SwiftUI-only view modifiers and are **not available in UIKit**. Use the following alternatives:
+
+**Screen tracking** — call `didNavigate(pageName:)` in `viewDidLoad`:
 
 ```swift
-Button(action: {
-    withAnimation { showContent.toggle() }
-}) {
-    Text(showContent ? "Hide content" : "Show content")
+override func viewDidLoad() {
+    super.viewDidLoad()
+    Noibu.shared.didNavigate(pageName: "ProductDetails")
 }
-.trackTapAction(name: "ToggleContentButton")
 ```
+
+**Action tracking** — use `addCustomAttribute` to record meaningful tap events:
+
+```swift
+@objc private func addToCartTapped() {
+    Noibu.shared.addCustomAttribute(name: "tap.action", value: "AddToCart")
+    cartStore.add(product)
+}
+```
+
+> The 10-attribute-per-session limit applies. Use `addCustomAttribute` for the most significant interactions rather than every tap.
 
 ### Naming Best Practices
 
 - Use clear, descriptive names focused on user intent (`"AddToCart"`, not `"Button123"`).
-- Stay consistent across similar interactions.
+- Stay consistent across platforms — use the same names in UIKit as you would in SwiftUI.
 - Avoid including personal or sensitive data in tag names.
 
 ---
 
 ## 10. Custom Attributes
 
-Add metadata to sessions for filtering and analysis in the Noibu dashboard. Attributes are session-scoped and should describe context that changes infrequently (feature flags, A/B variants, environment, build metadata, etc.).
+Add metadata to sessions for filtering and analysis in the Noibu dashboard. Attributes are session-scoped and describe context that changes infrequently (feature flags, A/B variants, environment, build metadata, etc.).
 
 ### Adding Attributes
 
@@ -416,8 +469,6 @@ Noibu.shared.addCustomAttribute(name: "appVersion", value: "2.1.0")
 | Attribute value length | 1–50 characters |
 | Duplicate names | Not allowed |
 
-The method returns `true` on success and `false` if the attribute was rejected (limit hit, invalid input, duplicate, SDK not initialized).
-
 ### Example with Result Check
 
 ```swift
@@ -432,17 +483,10 @@ if !Noibu.shared.addCustomAttribute(name: "customerId", value: customerId) {
 
 ### Privacy Mode Selection
 
-Choose the privacy mode based on your app's data sensitivity:
-
 ```swift
-// General apps — masks only sensitive fields (default)
-privacyMode: .maskSensitive
-
-// Apps handling highly sensitive data
-privacyMode: .maskAll
-
-// Internal/debug builds only
-privacyMode: .allowAll
+privacyMode: .maskSensitive  // General apps (default)
+privacyMode: .maskAll        // Highly sensitive data
+privacyMode: .allowAll       // Internal/debug builds only
 ```
 
 ### Data Storage
@@ -455,35 +499,36 @@ privacyMode: .allowAll
 
 ## 12. Lifecycle Management
 
-### One-Shot Initialization
+The SDK is intended to run for the lifetime of the app process. Call `Noibu.shared.initialize(configuration:)` exactly once during app launch — subsequent calls are no-ops. The SDK persists across foreground/background transitions and stops only when the app process terminates.
 
-The SDK is intended to run for the lifetime of the app process. Call `Noibu.shared.initialize(configuration:)` exactly once during app launch — subsequent calls are no-ops if the SDK is already configured. The SDK persists across foreground/background transitions and stops only when the app process terminates.
+---
 
-The current build does not expose a public `shutdown()` method.
+## SwiftUI vs UIKit — Quick Reference
+
+| Feature | SwiftUI | UIKit |
+|---------|---------|-------|
+| Initialization | `App.init()` | `AppDelegate.application(_:didFinishLaunchingWithOptions:)` |
+| Screen tracking | `.trackView(name:)` modifier | `Noibu.shared.didNavigate(pageName:)` in `viewDidLoad` |
+| Tap tracking | `.trackTapAction(name:)` modifier | `Noibu.shared.addCustomAttribute(name: "tap.action", value:)` |
+| Tab switches | `.onChange(of: selectedTab)` | Tab bar delegate → `didNavigate` |
+| WebView tracking | `NoibuWebViewTracking.enable` in `makeUIView` | `NoibuWebViewTracking.enable` in `viewDidLoad`, before `load` |
+| Automatic VC tracking | ✅ | ✅ (partial — manual `didNavigate` recommended for tabs and modals) |
 
 ---
 
 ## Troubleshooting
 
-### Verify Installation
-
-Check the Xcode console for SDK initialization log lines:
-
-```
-filter your device log by: "Noibu"
-```
-
-### Common Issues
-
 | Issue | Solution |
 |-------|----------|
 | No recordings appearing | Verify `domain` is correct and reachable from the device |
-| `pod install` can't find spec | Run `pod install --repo-update`, or clear cache with `rm -rf ~/Library/Caches/CocoaPods` |
-| Build error after CocoaPods install | Open `.xcworkspace`, not `.xcodeproj` |
-| Network requests not captured | Ensure `NoibuHTTPInterceptor.shared.install()` is called and the `URLSession` does not exclude default protocols |
-| WebView content not in replay | Ensure `NoibuWebViewTracking.enable(_:)` is called **before** loading any URL |
+| WebView content not in replay | Ensure `NoibuWebViewTracking.enable(_:)` is called **before** loading any URL. In UIKit, call it in `viewDidLoad` right after creating the `WKWebView`. |
+| UIKit: tap actions not tracked | `trackTapAction` is SwiftUI-only. Use `addCustomAttribute(name: "tap.action", value:)` instead. |
+| UIKit: screen names missing | Call `didNavigate(pageName:)` in `viewDidLoad` for each `UIViewController`. |
+| `pod install` can't find spec | Run `pod install --repo-update` |
+| Build error after CocoaPods | Open `.xcworkspace`, not `.xcodeproj` |
+| Network requests not captured | Ensure custom `URLSession` instances include `NoibuURLProtocol` in `protocolClasses` |
 | Errors not appearing | Verify `addError(...)` is called after `initialize(configuration:)` |
-| Pre-release version not resolvable via SPM | SPM requires `exact:` for pre-release versions; `from:` won't match them |
+| Pre-release version not resolvable | SPM requires `exact:` for pre-release versions |
 
 ---
 
@@ -491,7 +536,8 @@ filter your device log by: "Noibu"
 
 Need help? Contact your Noibu solutions engineer with:
 - SDK version
-- iOS version
+- iOS version and device type
+- SwiftUI or UIKit
 - Xcode version
 - Initialization code snippet
 - Console log output
