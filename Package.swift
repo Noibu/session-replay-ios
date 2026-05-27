@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "NoibuSessionReplay",
-    platforms: [.iOS(.v16)],
+    platforms: [.iOS(.v14)],
     products: [
         .library(
             name: "NoibuSessionReplay",
@@ -14,7 +14,7 @@ let package = Package(
         .binaryTarget(
             name: "NoibuSessionReplay",
             url: "https://github.com/Noibu/session-replay-ios/releases/download/v0.1.4-rc.1/NoibuSessionReplay.xcframework.zip",
-            checksum: "a28102c6ecf009ab765e2c15ec4a880032dbd88bc385734e3daa9a8806735ec7"
+            checksum: "e1626eb6f3c00b6a357a8e25b8fbc4c6e26efd80464328dba10e1f6247ca8a12"
         )
     ]
 )
