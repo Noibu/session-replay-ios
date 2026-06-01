@@ -64,7 +64,7 @@ Then reference the product in your target:
 Add to your `Podfile`:
 
 ```ruby
-platform :ios, '16.0'
+platform :ios, '14.0'
 use_frameworks!
 
 target 'YourApp' do
