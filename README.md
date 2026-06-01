@@ -19,7 +19,7 @@
 
 ## 1. Requirements
 
-- **Minimum iOS**: 16.0
+- **Minimum iOS**: 14.0
 - **Swift**: 5.9+
 - **Xcode**: 15.0+
 - **Dependency manager**: Swift Package Manager **or** CocoaPods
