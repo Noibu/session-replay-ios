@@ -34,7 +34,7 @@ The SDK is distributed as a self-contained binary XCFramework that statically bu
 
 1. In Xcode, go to **File → Add Package Dependencies…**
 2. Enter the package URL: `https://github.com/Noibu/session-replay-ios.git`
-3. Choose **Exact Version** and select `0.1.0-rc.1` (pre-release versions require `Exact Version`).
+3. Choose **Exact Version** and select `[last version]` (pre-release versions require `Exact Version`).
 4. Add the package to your app target.
 
 ### Swift Package Manager (`Package.swift`)
@@ -43,7 +43,7 @@ The SDK is distributed as a self-contained binary XCFramework that statically bu
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        exact: "0.1.0-rc.1"
+        exact: "[last sdk version]"
     )
 ]
 ```
@@ -68,7 +68,7 @@ platform :ios, '16.0'
 use_frameworks!
 
 target 'YourApp' do
-  pod 'NoibuSessionReplay', '~> 0.1.0-rc.1'
+  pod 'NoibuSessionReplay', '[last version]'
 end
 ```
 
