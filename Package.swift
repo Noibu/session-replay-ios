@@ -7,14 +7,19 @@ let package = Package(
     products: [
         .library(
             name: "NoibuSessionReplay",
-            targets: ["NoibuSessionReplay"]
+            targets: ["NoibuSessionReplay", "coreKit"]
         )
     ],
     targets: [
         .binaryTarget(
             name: "NoibuSessionReplay",
-            url: "https://github.com/Noibu/session-replay-ios/releases/download/0.1.4-rc.4/NoibuSessionReplay.xcframework.zip",
-            checksum: "f94cb74a94359cfafa8fe98410616cf14c9b3ad070eae7a8f9bc95d1023b59dc"
+            url: "https://github.com/Noibu/session-replay-ios/releases/download/0.1.4-rc.5/NoibuSessionReplay.xcframework.zip",
+            checksum: "9e390ce94da06857c2169186e4fb00f59353777ad15e2eba1a212b5fe204b4d9"
+        ),
+        .binaryTarget(
+            name: "coreKit",
+            url: "https://github.com/Noibu/session-replay-ios/releases/download/0.1.4-rc.5/NoibuSessionReplay.xcframework.zip",
+            checksum: "9e390ce94da06857c2169186e4fb00f59353777ad15e2eba1a212b5fe204b4d9"
         )
     ]
 )
