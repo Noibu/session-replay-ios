@@ -13,13 +13,13 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "NoibuSessionReplay",
-            url: "https://github.com/Noibu/session-replay-ios/releases/download/0.1.4-rc.6/NoibuSessionReplay.xcframework.zip",
-            checksum: "5b2c8d19d36f2f667128ecf04b63b5984bf89a316807e0d884de31e1114e882d"
+            url: "https://github.com/Noibu/session-replay-ios/releases/download/0.1.0-rc.1-SNAPSHOT/NoibuSessionReplay.xcframework.zip",
+            checksum: "47d6facd2ce37ba03f741e7c68b65cb1c56ed3994766c942367d039c97de0932"
         ),
         .binaryTarget(
             name: "coreKit",
-            url: "https://github.com/Noibu/session-replay-ios/releases/download/0.1.4-rc.6/coreKit.xcframework.zip",
-            checksum: "17f837155575843b75852be9cda19b97530e7696dd3b7987db093d0dc16afc8a"
+            url: "https://github.com/Noibu/session-replay-ios/releases/download/0.1.0-rc.1-SNAPSHOT/coreKit.xcframework.zip",
+            checksum: "141a1e3c29ff2fc4f5f62a429e8d6c5e89ebaf3233c24d45466dbff05778c9c2"
         )
     ]
 )
