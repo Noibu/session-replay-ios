@@ -14,12 +14,13 @@
 - [10. Custom Attributes](#10-custom-attributes)
 - [11. Privacy & Security](#11-privacy--security)
 - [12. Lifecycle Management](#12-lifecycle-management)
+- [13. Background Sync](#13-background-sync)
 
 ---
 
 ## 1. Requirements
 
-- **Minimum iOS**: 14.0
+- **Minimum iOS**: 16.0
 - **Swift**: 5.9+
 - **Xcode**: 15.0+
 - **Dependency manager**: Swift Package Manager **or** CocoaPods
@@ -34,7 +35,7 @@ The SDK is distributed as a self-contained binary XCFramework that statically bu
 
 1. In Xcode, go to **File → Add Package Dependencies…**
 2. Enter the package URL: `https://github.com/Noibu/session-replay-ios.git`
-3. Choose **Exact Version** and select `[last version]` (pre-release versions require `Exact Version`).
+3. Choose **Exact Version** and select `0.1.0-rc.1` (pre-release versions require `Exact Version`).
 4. Add the package to your app target.
 
 ### Swift Package Manager (`Package.swift`)
@@ -43,7 +44,7 @@ The SDK is distributed as a self-contained binary XCFramework that statically bu
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        exact: "[last sdk version]"
+        exact: "0.1.0-rc.1"
     )
 ]
 ```
@@ -64,11 +65,24 @@ Then reference the product in your target:
 Add to your `Podfile`:
 
 ```ruby
-platform :ios, '14.0'
-use_frameworks!
+platform :ios, '16.0'
 
 target 'YourApp' do
-  pod 'NoibuSessionReplay', '[last version]'
+  pod 'NoibuSessionReplay', '~> 1.0.0-rc.2'
+end
+
+# Xcode 15+ defaults ENABLE_USER_SCRIPT_SANDBOXING = YES, which blocks CocoaPods'
+# "[CP] Embed Pods Frameworks" script (it copies coreKit.framework into your app) with
+# "Sandbox: rsync ... Operation not permitted". Disable script sandboxing on your app target:
+post_install do |installer|
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.user_project.native_targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+      end
+    end
+    aggregate_target.user_project.save
+  end
 end
 ```
 
@@ -79,6 +93,15 @@ pod install --repo-update
 open YourApp.xcworkspace
 ```
 
+> **Any linkage mode works.** The SDK vendors a dynamic `coreKit.xcframework`, and CocoaPods adds
+> the `[CP] Embed Pods Frameworks` phase for a vendored dynamic xcframework whether or not you use
+> `use_frameworks!` — verified against this pod under `use_frameworks! :linkage => :static` and with
+> no `use_frameworks!` at all. Use whichever mode your app already uses; React Native apps must
+> keep `:linkage => :static` (Hermes does not support dynamic frameworks).
+>
+> You can also set `ENABLE_USER_SCRIPT_SANDBOXING` to `No` in your app target's Build Settings
+> instead of the `post_install` hook.
+>
 > Always open `.xcworkspace`, not `.xcodeproj`, when using CocoaPods.
 
 ---
@@ -92,20 +115,57 @@ The SDK is configured via `NoibuConfig`. Parameters:
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `domain` | `String` | **Yes** | - | Your Noibu domain endpoint (provided by Noibu) |
-| `environment` | `String` | No | `"test"` | Label to separate environments. _Reserved — not yet applied to the recording pipeline._ |
-| `sampleRate` | `Double` | No | `100.0` | Percentage of sessions to capture (0–100). _Reserved — current builds capture every session regardless of value._ |
-| `privacyMode` | `NoibuPrivacyMode` | No | `.maskSensitive` | Privacy level for session recording. _Reserved — current builds use `.maskSensitive` regardless of value._ |
-| `firstPartyHosts` | `[String]` | No | `[]` | Hostnames intended for first-party network classification. _Reserved — currently unused._ |
+| `privacyMode` | `NoibuPrivacyMode` | No | `.maskSensitive` | How much displayed text reaches the replay. See [Privacy Modes](#privacy-modes). |
+| `logLevel` | `NoibuLogLevel?` | No | `nil` | Diagnostic log verbosity. Leave unset for the default (silent in release builds). See [Diagnostic Logging](#diagnostic-logging). |
+| `trackTouches` | `Bool` | No | `true` | Capture taps and scrolls (with DXA selectors) |
+| `trackKeyboard` | `Bool` | No | `true` | Capture keyboard-focus events (which field was typed in — never the text) |
+| `trackNetwork` | `Bool` | No | `true` | Capture HTTP requests/responses |
+| `trackWebViews` | `Bool` | No | `true` | Allow webview hybrid capture — off makes `NoibuWebViewTracking.enable` a no-op |
+| `autoTrackNavigation` | `Bool` | No | `false` | Derive page boundaries from `viewDidAppear` instead of explicit `didNavigate` calls |
+| `trackErrors` | `Bool` | No | `true` | Capture uncaught exceptions (chains to existing handlers) |
 
-> **Note**: Only `domain` affects current behavior. The other parameters are part of the API surface for forward compatibility and will become functional in upcoming releases.
+The field list mirrors Android's `SessionReplayConfig`, so the React Native and Flutter shims map one
+config surface onto both platforms.
 
-### Privacy Modes
+### Privacy
+
+The mode controls how much **displayed** text (labels, button titles, field placeholders) reaches the
+replay. What the user **types** is never captured in any mode — a field surfaces its placeholder, or `***`.
 
 | Mode | Description |
 |------|-------------|
-| `.allowAll` | All content is visible in recordings |
-| `.maskSensitive` | Masks passwords, credit card fields, and other sensitive inputs (default) |
-| `.maskAll` | Masks all text content |
+| `.allowAll` | Displayed text is captured verbatim — nothing is redacted |
+| `.maskSensitive` | Default. Displayed text is captured, with card / SSN / email / phone spans redacted in place — including PII rendered as a plain label, which input masking never sees |
+| `.maskAll` | No readable text at all: every string becomes `xxxx`, keeping only its word/length shape |
+
+The mode applies to the UIKit walker (which also covers React Native's text views) and to SwiftUI text
+read structurally from the render tree. It is shared with the Android and Flutter SDKs
+(`com.noibu.mobile.core.privacy.TextMasking` in the KMP core owns the policy).
+
+> **SwiftUI caveat:** where the structural reader can't reach a SwiftUI view, its layer is rasterized
+> into an image — text baked into those pixels is not redacted by any mode. Prefer `.maskAll` together
+> with a screen-level review for SwiftUI apps handling regulated data.
+
+### Diagnostic Logging
+
+The SDK can print diagnostic logs (via `NSLog`, prefixed `NB>`, visible in the Xcode console and Console.app) to help debug an integration. Control verbosity with `logLevel`:
+
+| Level | What it logs |
+|-------|--------------|
+| `.none` | Nothing |
+| `.error` | Failures (send / connect / persist) |
+| `.warning` | Recoverable issues (discarded data, missing assets) plus errors |
+| `.info` | **Recommended for debugging** — lifecycle milestones (init, page recording, data sends, background sync) plus warnings and errors |
+| `.debug` / `.verbose` | Internal Noibu diagnostics; high volume, intended for Noibu support |
+
+```swift
+let config = NoibuConfig(
+    domain: "your-domain.noibu.com",
+    logLevel: .info
+)
+```
+
+Logging is **off by default** — leave `logLevel` unset and the SDK logs nothing. Set a level to opt in.
 
 ---
 
@@ -125,7 +185,6 @@ struct MyApp: App {
     init() {
         let config = NoibuConfig(
             domain: "[your domain]",
-            sampleRate: 100.0,
             privacyMode: .maskSensitive
         )
         Noibu.shared.initialize(configuration: config)
@@ -281,11 +340,13 @@ Noibu.shared.addError(error, attributes: ["screen": "Checkout"])
 | `addError(_:attributes:)` (Swift `Error`) | Report a caught Swift error |
 | `addError(_:attributes:)` (`NSError`) | Report an `NSError` |
 
+> **Note**: Up to 500 errors are reported per page visit; the count resets on the next page visit.
+
 ---
 
 ## 7. Network Monitoring
 
-The SDK captures HTTP request and response metadata automatically — calling `Noibu.shared.initialize(configuration:)` registers the necessary `URLProtocol` with no additional setup.
+The SDK captures HTTP request and response metadata automatically — calling `Noibu.shared.initialize(configuration:)` registers the necessary `URLProtocol`, which covers `URLSession.shared`. Sessions you build yourself need one extra line (below).
 
 ### What Is Captured
 
@@ -297,15 +358,18 @@ The SDK captures HTTP request and response metadata automatically — calling `N
 
 ### Custom `URLSession` Instances
 
-Requests made through `URLSession.shared` are observed automatically. For custom `URLSession` instances that override `protocolClasses`:
+Requests made through `URLSession.shared` are observed automatically. A `URLSession` created from its own configuration consults only that configuration's `protocolClasses`, so instrument it explicitly:
 
 ```swift
 import NoibuSessionReplay
 
 let config = URLSessionConfiguration.default
-config.protocolClasses = [NoibuURLProtocol.self] + (config.protocolClasses ?? [])
+NoibuHTTPInterceptor.shared.installNetworkInstrumentation(on: config)
 let session = URLSession(configuration: config)
 ```
+
+Order doesn't matter — a session built before `Noibu.shared.initialize(configuration:)` is still
+captured once init lands, and nothing is captured when `trackNetwork` is off.
 
 ---
 
@@ -391,6 +455,7 @@ NoibuWebViewTracking.disable(webView)
 - Call `enable(_:)` **after** `Noibu.shared.initialize(...)` — the SDK must already be running.
 - **UIKit**: do not call `enable` in `viewWillAppear` or `viewDidAppear` — by that point the WebView may have already started loading. Always call it in `viewDidLoad` right after creating the `WKWebView`.
 - Each `WKWebView` instance is tracked independently.
+- Input values in the page are masked in replay, and a click on a field reports its label rather than its contents — the same rule the native view walker applies to a text field.
 
 ---
 
@@ -484,10 +549,13 @@ if !Noibu.shared.addCustomAttribute(name: "customerId", value: customerId) {
 ### Privacy Mode Selection
 
 ```swift
-privacyMode: .maskSensitive  // General apps (default)
-privacyMode: .maskAll        // Highly sensitive data
-privacyMode: .allowAll       // Internal/debug builds only
+privacyMode: .maskSensitive  // card / SSN / email / phone spans redacted in displayed text — default
+privacyMode: .maskAll        // no readable text at all — only word/length shape survives
+privacyMode: .allowAll       // displayed text verbatim
 ```
+
+Independent of the mode: secure text fields record `***`, and the sensitive HTTP headers
+`authorization`, `cookie`, `set-cookie` and `x-api-key` are redacted to `***`.
 
 ### Data Storage
 
@@ -499,7 +567,57 @@ privacyMode: .allowAll       // Internal/debug builds only
 
 ## 12. Lifecycle Management
 
-The SDK is intended to run for the lifetime of the app process. Call `Noibu.shared.initialize(configuration:)` exactly once during app launch — subsequent calls are no-ops. The SDK persists across foreground/background transitions and stops only when the app process terminates.
+The SDK is intended to run for the lifetime of the app process. Call `Noibu.shared.initialize(configuration:)` exactly once during app launch — subsequent calls are no-ops. The SDK persists across foreground/background transitions.
+
+### Shutdown
+
+To completely stop the SDK (e.g. the user revokes consent):
+
+```swift
+Noibu.shared.shutdown()
+```
+
+This will:
+- Stop all capture (replay, taps, keyboard, network, webviews)
+- Flush pending data
+- Remove lifecycle observers
+
+`initialize(configuration:)` is accepted again afterwards, so consent can be granted later in the same app run.
+
+---
+
+## 13. Background Sync
+
+The SDK sends captured data continuously while the app is in the foreground and flushes any pending data when the app moves to the background. To let the system deliver the **last events captured at the moment of backgrounding** after the app is suspended or terminated, enable a background processing task.
+
+This is optional. Without it, data still flushes during the short window iOS grants on backgrounding, and any remainder is sent on the next launch. Enabling it lets the remainder be delivered sooner, while the app is suspended.
+
+### Required `Info.plist` keys
+
+```xml
+<key>UIBackgroundModes</key>
+<array>
+    <string>processing</string>
+</array>
+<key>BGTaskSchedulerPermittedIdentifiers</key>
+<array>
+    <string>com.noibu.sessionreplay.process</string>
+</array>
+```
+
+The identifier must be exactly `com.noibu.sessionreplay.process` — the SDK registers and schedules the task for you. No extra code is needed beyond calling `Noibu.shared.initialize(configuration:)` at launch (see [Initialization](#4-initialization)); the SDK registers the task during initialization, which must complete before launch finishes.
+
+> **Note**: iOS runs background processing tasks opportunistically — typically when the device is idle and on power — so delivery after suspension can be delayed by the system. Foreground sending and the on-background flush are unaffected.
+
+### Verifying
+
+Background tasks don't fire on demand. To force a run while debugging on a **physical device**, background the app, pause in Xcode, and run in the LLDB console:
+
+```
+e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.noibu.sessionreplay.process"]
+```
+
+Resume the app — the SDK drains and sends any pending data. (The Simulator does not reliably run background tasks; test on a device.)
 
 ---
 
@@ -521,13 +639,15 @@ The SDK is intended to run for the lifetime of the app process. Call `Noibu.shar
 | Issue | Solution |
 |-------|----------|
 | No recordings appearing | Verify `domain` is correct and reachable from the device |
+| Need detail when debugging an integration | Set `logLevel: .info` in `NoibuConfig`, then filter the Xcode console / Console.app for `NB>` (see [Diagnostic Logging](#diagnostic-logging)) |
 | WebView content not in replay | Ensure `NoibuWebViewTracking.enable(_:)` is called **before** loading any URL. In UIKit, call it in `viewDidLoad` right after creating the `WKWebView`. |
 | UIKit: tap actions not tracked | `trackTapAction` is SwiftUI-only. Use `addCustomAttribute(name: "tap.action", value:)` instead. |
 | UIKit: screen names missing | Call `didNavigate(pageName:)` in `viewDidLoad` for each `UIViewController`. |
 | `pod install` can't find spec | Run `pod install --repo-update` |
 | Build error after CocoaPods | Open `.xcworkspace`, not `.xcodeproj` |
-| Network requests not captured | Ensure custom `URLSession` instances include `NoibuURLProtocol` in `protocolClasses` |
+| Network requests not captured | Call `NoibuHTTPInterceptor.shared.installNetworkInstrumentation(on:)` on custom `URLSession` configurations |
 | Errors not appearing | Verify `addError(...)` is called after `initialize(configuration:)` |
+| Last events before backgrounding delayed/missing | Add the [Background Sync](#13-background-sync) `Info.plist` keys, and ensure `initialize` runs at launch so the task can register in time |
 | Pre-release version not resolvable | SPM requires `exact:` for pre-release versions |
 
 ---
