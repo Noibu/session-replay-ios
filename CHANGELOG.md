@@ -5,6 +5,48 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1]
+
+### Fixed
+- **No more 100% CPU, crash or crash loop on SwiftUI screens that nest a background in a same-size
+  background.** Layer ids came from geometry alone, so a view filling a same-size view with a
+  background (a card and its content) took its parent's id and became its own parent. The replay
+  differ then looped forever on a background thread — a core pinned at 100%, the device heating up
+  until iOS killed the app — or, with that view on a screen's first frame, overflowed its stack and
+  crashed the app, again on every launch while that frame waited on disk. Ids are now unique within
+  each capture, and the replay core repairs any tree with a repeated id or a parent cycle before
+  diffing it, so an app already caught in that loop recovers on update, with its data intact.
+- **SwiftUI replays no longer come out blank or missing layers** where repeated ids confused the
+  player, such as a home screen whose sections nest backgrounds.
+
+## [1.1.0]
+
+### Added
+- **`track(name:data:)` — ecommerce and custom events.** The counterpart of NoibuJS's
+  `track(name, payload)`: report a standard ecommerce event (`product_viewed`,
+  `product_added_to_cart`, `cart_viewed`, `checkout_started`, `checkout_completed`, …) or any custom
+  event with a JSON payload, and it appears on the session's timeline and in Explorations exactly as
+  the web event does. Standard payloads are checked against the shared ecommerce schema (unknown
+  properties are dropped, type mismatches rejected); a custom payload only has to be a JSON object.
+  Event names are capped at 500 characters and payloads at 10,000 characters serialized — the
+  payload cap also applies to standard events, which web leaves to its schema — and up to 500 events
+  are kept per page visit. Nothing is thrown: the call answers a `NoibuTrackResult` with `success`
+  and the validation `errors`, in the same words as web. `track(name:dataJson:)` takes an
+  already-encoded payload.
+  Called off the main thread, `track` is ordered behind a `didNavigate` already on its way there,
+  so an event tracked as a screen appears lands on that screen's page visit.
+  Events tracked between `sealCurrentPageReplay` and the boundary that follows it are held by the
+  core and attributed to the page the boundary opens (the Android Compose add-on's transition
+  pattern); no iOS caller uses that pattern today.
+
+### Fixed
+- **Capture no longer crashes on iOS 26 when a screen shows a tab bar.** The Liquid Glass tab bar
+  reports an infinite corner radius for its capsule layers, and the replay walkers converted layer
+  geometry to integers with Swift's checked `Int32(_:)`, which traps on a non-finite value — the app
+  died on the first capture of any `UITabBar` or SwiftUI `TabView` screen. Every layer-derived
+  conversion now treats a non-finite radius or frame as zero and clamps the rest. Nothing changes in
+  an app and there is nothing to configure.
+
 ## [1.0.1]
 
 ### Fixed

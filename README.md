@@ -20,7 +20,7 @@
 
 ## 1. Requirements
 
-- **Minimum iOS**: 16.0
+- **Minimum iOS**: 14.0
 - **Swift**: 5.9+
 - **Xcode**: 15.0+
 - **Dependency manager**: Swift Package Manager **or** CocoaPods
@@ -29,13 +29,13 @@
 
 ## 2. Installation
 
-The SDK is distributed as a self-contained binary XCFramework that statically bundles all of its internal dependencies — no additional packages or pods are required.
+The current release is **1.1.0**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager and CocoaPods resolve for you — nothing to add by hand.
 
 ### Swift Package Manager (Xcode UI)
 
 1. In Xcode, go to **File → Add Package Dependencies…**
 2. Enter the package URL: `https://github.com/Noibu/session-replay-ios.git`
-3. Choose **Exact Version** and select `0.1.0-rc.1` (pre-release versions require `Exact Version`).
+3. Choose **Up to Next Major Version** from `1.1.0` (or **Exact Version** `1.1.0` to pin).
 4. Add the package to your app target.
 
 ### Swift Package Manager (`Package.swift`)
@@ -44,7 +44,7 @@ The SDK is distributed as a self-contained binary XCFramework that statically bu
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        exact: "0.1.0-rc.1"
+        from: "1.1.0"
     )
 ]
 ```
@@ -65,10 +65,10 @@ Then reference the product in your target:
 Add to your `Podfile`:
 
 ```ruby
-platform :ios, '16.0'
+platform :ios, '14.0'
 
 target 'YourApp' do
-  pod 'NoibuSessionReplay', '~> 1.0.0-rc.2'
+  pod 'NoibuSessionReplay', '~> 1.1.0'
 end
 
 # Xcode 15+ defaults ENABLE_USER_SCRIPT_SANDBOXING = YES, which blocks CocoaPods'
@@ -93,6 +93,9 @@ pod install --repo-update
 open YourApp.xcworkspace
 ```
 
+> **The pod is a binary.** CocoaPods downloads the prebuilt xcframework bundle from the matching
+> GitHub release and pulls in the `Kronos` pod as a dependency; nothing is compiled from source.
+>
 > **Any linkage mode works.** The SDK vendors a dynamic `coreKit.xcframework`, and CocoaPods adds
 > the `[CP] Embed Pods Frameworks` phase for a vendored dynamic xcframework whether or not you use
 > `use_frameworks!` — verified against this pod under `use_frameworks! :linkage => :static` and with
@@ -121,8 +124,8 @@ The SDK is configured via `NoibuConfig`. Parameters:
 | `trackKeyboard` | `Bool` | No | `true` | Capture keyboard-focus events (which field was typed in — never the text) |
 | `trackNetwork` | `Bool` | No | `true` | Capture HTTP requests/responses |
 | `trackWebViews` | `Bool` | No | `true` | Allow webview hybrid capture — off makes `NoibuWebViewTracking.enable` a no-op |
-| `autoTrackNavigation` | `Bool` | No | `false` | Derive page boundaries from `viewDidAppear` instead of explicit `didNavigate` calls |
-| `trackErrors` | `Bool` | No | `true` | Capture uncaught exceptions (chains to existing handlers) |
+| `autoTrackNavigation` | `Bool` | No | `false` | Derive page boundaries from `UIViewController.viewDidAppear` instead of explicit `didNavigate` calls. See [Page Navigation](#5-page-navigation). |
+| `trackErrors` | `Bool` | No | `true` | Report uncaught `NSException`s as errors (chains to the existing handler). See [Error Reporting](#6-error-reporting). |
 
 The field list mirrors Android's `SessionReplayConfig`, so the React Native and Flutter shims map one
 config surface onto both platforms.
@@ -145,6 +148,29 @@ read structurally from the render tree. It is shared with the Android and Flutte
 > **SwiftUI caveat:** where the structural reader can't reach a SwiftUI view, its layer is rasterized
 > into an image — text baked into those pixels is not redacted by any mode. Prefer `.maskAll` together
 > with a screen-level review for SwiftUI apps handling regulated data.
+
+The mode you initialized with can be read back from `Noibu.shared.privacyMode`.
+
+### Per-view privacy (UIKit)
+
+The global mode sets the floor for the whole app. To tighten one region without masking everything,
+set `noibuPrivacy` on a `UIView`; the level applies to that view and its whole subtree, and a nested
+mark wins over an outer one. A mark can only make a region stricter than the global mode, never looser.
+
+| Level | Effect on the subtree |
+|-------|-----------------------|
+| `.mask` | Every readable text is masked, keeping its shape — layout replays, words do not |
+| `.maskInputs` | Typed values are masked; surrounding labels stay readable |
+| `.hidden` | Dropped from the replay entirely — no node, no tap target, nothing |
+
+```swift
+cardNumberField.noibuPrivacy = .mask       // this field's content never leaves the device
+paymentForm.noibuPrivacy = .maskInputs     // the form's labels stay readable, the values do not
+secretBanner.noibuPrivacy = .hidden        // not captured at all
+```
+
+There is no SwiftUI equivalent: a SwiftUI screen is governed by the global `privacyMode` (see the
+caveat above), or by marking a `UIViewRepresentable`'s backing `UIView`.
 
 ### Diagnostic Logging
 
@@ -237,10 +263,33 @@ if Noibu.shared.isInitialized {
 
 ## 5. Page Navigation
 
-### Automatic Tracking
+A page visit starts at each page boundary. There are two ways to produce boundaries — **choose one**:
 
-- **SwiftUI**: screen transitions and navigation events are captured automatically.
-- **UIKit**: `UIViewController` lifecycle events are also tracked automatically. However, for tab switches, modals, and custom navigation flows, you should call `didNavigate()` manually to ensure clean page splits in the session replay.
+| Mode | How | Fits |
+|------|-----|------|
+| Explicit (default) | Call `Noibu.shared.didNavigate(pageName:)` (or `.trackView(name:)` in SwiftUI) at each screen | SwiftUI apps, custom routers, apps that want their own page names |
+| Automatic | `autoTrackNavigation: true` in `NoibuConfig` | UIKit apps with one `UIViewController` per screen |
+
+Nothing is detected automatically in SwiftUI: a SwiftUI screen only becomes a page when you call
+`didNavigate` or attach `.trackView(name:)`.
+
+### Automatic Tracking (UIKit)
+
+With `autoTrackNavigation: true`, the SDK hooks `UIViewController.viewDidAppear` and opens a page for
+each content controller that appears:
+
+- Container controllers (`UINavigationController`, `UITabBarController`, `UISplitViewController`,
+  `UIPageViewController`, and any controller with child controllers) host a screen and are not pages.
+- `UIAlertController` and system-internal controllers are not pages; only controllers defined in your
+  app bundle count.
+- The page name is the class name with a trailing `ViewController`, `Controller` or `VC` removed
+  (`CartViewController` → `Cart`).
+- A consecutive re-appearance of the same controller instance (e.g. dismissing a sheet over it) does
+  not open a new page.
+
+**Do not mix the modes.** The first explicit `didNavigate` call permanently silences automatic
+tracking for the rest of the process, so a single stray call turns a fully auto-tracked app into one
+with a single page. If you need custom names for some screens, use explicit tracking everywhere.
 
 ### Manual Page Tracking
 
@@ -248,6 +297,7 @@ Call `didNavigate()` when the user moves to a new page:
 
 ```swift
 Noibu.shared.didNavigate(pageName: "ProductDetails")
+Noibu.shared.didNavigate()   // boundary without a name
 ```
 
 #### SwiftUI — Tab switches
@@ -306,10 +356,11 @@ Noibu.shared.addError(message: "Payment processing failed")
 
 Noibu.shared.addError(
     message: "Network timeout",
-    stack: Thread.callStackSymbols.joined(separator: "\n"),
-    attributes: ["screen": "Checkout", "request_type": "POST"]
+    stack: Thread.callStackSymbols.joined(separator: "\n")
 )
 ```
+
+When `stack` is omitted, the current call stack is captured. An empty `message` is ignored.
 
 ### Swift `Error`
 
@@ -317,7 +368,7 @@ Noibu.shared.addError(
 do {
     try riskyOperation()
 } catch {
-    Noibu.shared.addError(error, attributes: ["screen": "Home"])
+    Noibu.shared.addError(error)
 }
 ```
 
@@ -329,7 +380,7 @@ let error = NSError(
     code: 1001,
     userInfo: [NSLocalizedDescriptionKey: "Payment gateway timeout"]
 )
-Noibu.shared.addError(error, attributes: ["screen": "Checkout"])
+Noibu.shared.addError(error)
 ```
 
 ### API Reference
@@ -337,24 +388,35 @@ Noibu.shared.addError(error, attributes: ["screen": "Checkout"])
 | Method | Description |
 |--------|-------------|
 | `addError(message:stack:attributes:)` | Report a custom error message with optional stack trace |
-| `addError(_:attributes:)` (Swift `Error`) | Report a caught Swift error |
-| `addError(_:attributes:)` (`NSError`) | Report an `NSError` |
+| `addError(_:attributes:)` (Swift `Error`) | Report a caught Swift error (`localizedDescription` + current call stack) |
+| `addError(_:attributes:)` (`NSError`) | Report an `NSError` (`localizedDescription` + current call stack) |
+
+The `attributes` parameter is accepted for source compatibility but is reserved: its contents are not
+sent. To attach context to a session, use [Custom Attributes](#10-custom-attributes).
 
 > **Note**: Up to 500 errors are reported per page visit; the count resets on the next page visit.
+
+### Uncaught Exceptions
+
+With `trackErrors` on (the default), the SDK installs an uncaught-exception handler at `initialize`.
+It reports `NSException`-based crashes (reason and call stack) and always chains to the handler that
+was installed before it, so another crash reporter keeps working. Low-level signals (`SIGSEGV`,
+`SIGABRT`, Swift runtime traps) are not captured.
 
 ---
 
 ## 7. Network Monitoring
 
-The SDK captures HTTP request and response metadata automatically — calling `Noibu.shared.initialize(configuration:)` registers the necessary `URLProtocol`, which covers `URLSession.shared`. Sessions you build yourself need one extra line (below).
+The SDK captures HTTP requests and responses automatically — calling `Noibu.shared.initialize(configuration:)` registers the necessary `URLProtocol` (the same thing `NoibuHTTPInterceptor.shared.install()` does), which covers `URLSession.shared`. Sessions you build yourself need one extra line (below).
 
 ### What Is Captured
 
 | Data | Details |
 |------|---------|
-| Request metadata | HTTP method, URL |
-| Response metadata | Status code, duration |
-| Errors | Network failures and exceptions |
+| Request | HTTP method, URL, headers (sensitive ones redacted — see [Privacy & Security](#11-privacy--security)), body |
+| Response | Status code, duration, headers (redacted likewise), body |
+| Bodies | Captured for JSON, `text/*`, form-urlencoded and XML content types, up to 64 KB (a larger body is recorded as `[Body too large]`). Values under sensitive JSON keys (`password`, `cardNumber`, …) and card / email / SSN / phone patterns are scrubbed before the body leaves the device. |
+| Errors | Transport failures, HTTP error statuses, and GraphQL errors — a `200 OK` whose JSON body carries an `errors` array is reported as an error too |
 
 ### Custom `URLSession` Instances
 
@@ -452,40 +514,33 @@ NoibuWebViewTracking.disable(webView)
 ### Important Notes
 
 - Call `enable(_:)` **before** loading any URL — late attachment will miss the initial page load.
-- Call `enable(_:)` **after** `Noibu.shared.initialize(...)` — the SDK must already be running.
+- Initialize the SDK at launch (see [Initialization](#4-initialization)) so it is running by the time a webview is created; with `trackWebViews: false`, `enable` is a no-op.
 - **UIKit**: do not call `enable` in `viewWillAppear` or `viewDidAppear` — by that point the WebView may have already started loading. Always call it in `viewDidLoad` right after creating the `WKWebView`.
 - Each `WKWebView` instance is tracked independently.
-- Input values in the page are masked in replay, and a click on a field reports its label rather than its contents — the same rule the native view walker applies to a text field.
+- The page follows the configured `privacyMode`: under `.maskSensitive` (default) every input value is masked and a click on a field reports its label rather than its contents; `.maskAll` masks all page text as well; `.allowAll` records the page verbatim, typed values included.
 
 ---
 
 ## 9. View Tagging
 
-View tagging lets you label screens and user actions in the replay timeline.
+View tagging names the screens that appear in the replay timeline.
 
 ### SwiftUI
 
-Two view modifiers are available:
+`.trackView(name:)` calls `didNavigate(pageName:)` when the view appears — attach it to each screen's
+root view:
 
 ```swift
-// Tag a screen
 var body: some View {
     VStack { ... }
         .trackView(name: "ProductDetails")
 }
-
-// Tag a tap action
-Button("Add to Cart") {
-    cartStore.add(product)
-}
-.trackTapAction(name: "AddToCart")
 ```
 
 ### UIKit
 
-`trackView` and `trackTapAction` are SwiftUI-only view modifiers and are **not available in UIKit**. Use the following alternatives:
-
-**Screen tracking** — call `didNavigate(pageName:)` in `viewDidLoad`:
+`trackView` is a SwiftUI modifier. In UIKit, either enable `autoTrackNavigation` or call
+`didNavigate(pageName:)` in `viewDidLoad` (see [Page Navigation](#5-page-navigation)):
 
 ```swift
 override func viewDidLoad() {
@@ -494,22 +549,18 @@ override func viewDidLoad() {
 }
 ```
 
-**Action tracking** — use `addCustomAttribute` to record meaningful tap events:
+### Taps
 
-```swift
-@objc private func addToCartTapped() {
-    Noibu.shared.addCustomAttribute(name: "tap.action", value: "AddToCart")
-    cartStore.add(product)
-}
-```
-
-> The 10-attribute-per-session limit applies. Use `addCustomAttribute` for the most significant interactions rather than every tap.
+Taps and scrolls are captured natively for every element when `trackTouches` is on — nothing to tag.
+`.trackTapAction(name:)` (SwiftUI), `Noibu.shared.trackTapAction(name:)` and
+`UIControl.noibuTrackTapAction(name:)` (UIKit) still compile for source compatibility but do nothing;
+remove them from your code at your convenience.
 
 ### Naming Best Practices
 
-- Use clear, descriptive names focused on user intent (`"AddToCart"`, not `"Button123"`).
+- Use clear, descriptive names focused on user intent (`"ProductDetails"`, not `"VC2"`).
 - Stay consistent across platforms — use the same names in UIKit as you would in SwiftUI.
-- Avoid including personal or sensitive data in tag names.
+- Avoid including personal or sensitive data in page names.
 
 ---
 
@@ -534,13 +585,78 @@ Noibu.shared.addCustomAttribute(name: "appVersion", value: "2.1.0")
 | Attribute value length | 1–50 characters |
 | Duplicate names | Not allowed |
 
-### Example with Result Check
+The limits are enforced silently: an attribute that breaks a rule is dropped without feedback, so
+keep names and values within the table above.
+
+### Return Value
+
+`addCustomAttribute` returns `false` only when the SDK is not initialized yet; a `true` means the
+attribute was accepted for validation, not that it passed.
 
 ```swift
 if !Noibu.shared.addCustomAttribute(name: "customerId", value: customerId) {
-    print("Failed to attach customerId attribute to session")
+    print("Noibu is not initialized — call initialize(configuration:) first")
 }
 ```
+
+---
+
+## 10b. Tracking Events
+
+`track(name:data:)` reports ecommerce and custom events — the counterpart of NoibuJS's
+`track(name, payload)`. Events appear on the session's timeline and in Explorations.
+
+```swift
+// A standard ecommerce event: the payload follows the shared ecommerce schema.
+Noibu.shared.track(name: "product_added_to_cart", data: [
+    "cartLine": [
+        "quantity": 1,
+        "merchandise": ["id": "sku-42", "title": "Running Shoes",
+                        "price": ["amount": 89.99, "currencyCode": "USD"]],
+    ],
+])
+
+// A custom event: any name, any JSON object.
+let result = Noibu.shared.track(name: "promo_banner_dismissed", data: ["campaign": "summer"])
+if !result.success { print(result.errors) }
+
+// Already-serialized JSON goes through track(name:dataJson:).
+Noibu.shared.track(name: "cart_viewed", dataJson: cartJsonString)
+```
+
+| Rule | Limit |
+|------|-------|
+| Event name length | ≤ 500 characters |
+| Payload | a JSON object (`JSONSerialization.isValidJSONObject`) or `nil`, ≤ 10,000 characters serialized |
+| Standard payloads | checked against the ecommerce schema; unknown properties dropped, wrong types rejected |
+| Events per page visit | 500 |
+
+Nothing is thrown. `NoibuTrackResult.success` is `false` when the event was rejected and `errors`
+lists why, in the same words as the web SDK. Two messages have constants: a payload
+`JSONSerialization` cannot encode answers `NoibuTrackResult.notSerializable`, and a `track` before
+`initialize` answers `NoibuTrackResult.notInitialized`.
+
+`track` can be called from any thread. An event tracked as a screen appears — for example right
+after `didNavigate` — is ordered behind that boundary and lands on the new screen's page visit.
+
+### Standard ecommerce events
+
+A standard event's payload is validated against the shared ecommerce schema: every field is
+optional, unknown properties are dropped, and a type mismatch is reported in `errors` and the event
+is not sent. Any other event name is a custom event and only has to be a JSON object.
+
+Shared shapes: `Money` is `["amount": 89.99, "currencyCode": "USD"]`. A `productVariant` is
+`[id, sku, title, price: Money, product: [id, title, type, url, vendor]]`. A `cartLine` is
+`[quantity, merchandise: productVariant, cost: [totalAmount: Money]]`.
+
+| Event name | Payload key | Payload |
+|---|---|---|
+| `product_viewed` | `productVariant` | a product variant |
+| `product_added_to_cart`, `product_removed_from_cart` | `cartLine` | a cart line |
+| `cart_viewed` | `cart` | `[id, totalQuantity, lines: [cartLine], cost: [totalAmount: Money]]` |
+| `collection_viewed` | `collection` | `[id, title, productVariants: [productVariant]]` |
+| `search_submitted` | `searchResult` | `[query, productVariants: [productVariant]]` |
+| `checkout_started`, `checkout_address_info_submitted`, `checkout_contact_info_submitted`, `checkout_shipping_info_submitted`, `payment_info_submitted`, `checkout_completed` | `checkout` | `[token, currencyCode, subtotalPrice, totalTax, totalPrice, lineItems: [[id, title, quantity, variant: productVariant, finalLinePrice]], shippingLine: [price], discountApplications, order: [id, customer: [id, isFirstOrder]], transactions]` |
 
 ---
 
@@ -554,8 +670,13 @@ privacyMode: .maskAll        // no readable text at all — only word/length sha
 privacyMode: .allowAll       // displayed text verbatim
 ```
 
-Independent of the mode: secure text fields record `***`, and the sensitive HTTP headers
-`authorization`, `cookie`, `set-cookie` and `x-api-key` are redacted to `***`.
+Independent of the mode: secure text fields record `***`, captured HTTP bodies are PII-scrubbed (see
+[Network Monitoring](#7-network-monitoring)), and these request/response headers are recorded as
+`[REDACTED]` (matched case-insensitively):
+
+`authorization`, `proxy-authorization`, `cookie`, `set-cookie`, `x-auth-token`, `x-api-key`,
+`x-forwarded-for`, `forwarded`, `x-real-ip`, `from`, `content-md5`, `x-device-id`, `x-request-id`,
+`x-user-id`, `x-uidh`.
 
 ### Data Storage
 
@@ -569,6 +690,12 @@ Independent of the mode: secure text fields record `***`, and the sensitive HTTP
 
 The SDK is intended to run for the lifetime of the app process. Call `Noibu.shared.initialize(configuration:)` exactly once during app launch — subsequent calls are no-ops. The SDK persists across foreground/background transitions.
 
+### Sessions
+
+A session starts when the SDK initializes. If the app stays in the background for 15 minutes or
+more, a new session starts when it returns to the foreground; a shorter background stay continues
+the same session.
+
 ### Shutdown
 
 To completely stop the SDK (e.g. the user revokes consent):
@@ -580,7 +707,11 @@ Noibu.shared.shutdown()
 This will:
 - Stop all capture (replay, taps, keyboard, network, webviews)
 - Flush pending data
-- Remove lifecycle observers
+- Stop the lifecycle, session and clock monitors
+
+The tap and auto-navigation hooks and the uncaught-exception handler stay installed (they cannot be
+removed safely once in place) but go inert: everything they observe is dropped while the SDK is not
+initialized.
 
 `initialize(configuration:)` is accepted again afterwards, so consent can be granted later in the same app run.
 
@@ -626,11 +757,12 @@ Resume the app — the SDK drains and sends any pending data. (The Simulator doe
 | Feature | SwiftUI | UIKit |
 |---------|---------|-------|
 | Initialization | `App.init()` | `AppDelegate.application(_:didFinishLaunchingWithOptions:)` |
-| Screen tracking | `.trackView(name:)` modifier | `Noibu.shared.didNavigate(pageName:)` in `viewDidLoad` |
-| Tap tracking | `.trackTapAction(name:)` modifier | `Noibu.shared.addCustomAttribute(name: "tap.action", value:)` |
-| Tab switches | `.onChange(of: selectedTab)` | Tab bar delegate → `didNavigate` |
+| Screen tracking | `.trackView(name:)` modifier | `Noibu.shared.didNavigate(pageName:)` in `viewDidLoad`, or `autoTrackNavigation: true` |
+| Tap tracking | Automatic (`trackTouches`) | Automatic (`trackTouches`) |
+| Tab switches | `.onChange(of: selectedTab)` → `didNavigate` | Tab bar delegate → `didNavigate` (or automatic) |
 | WebView tracking | `NoibuWebViewTracking.enable` in `makeUIView` | `NoibuWebViewTracking.enable` in `viewDidLoad`, before `load` |
-| Automatic VC tracking | ✅ | ✅ (partial — manual `didNavigate` recommended for tabs and modals) |
+| Per-view privacy | Global `privacyMode` only | `view.noibuPrivacy = .mask / .maskInputs / .hidden` |
+| Automatic screen detection | — (use `.trackView`) | `autoTrackNavigation: true`; never mix with explicit `didNavigate` |
 
 ---
 
@@ -641,14 +773,16 @@ Resume the app — the SDK drains and sends any pending data. (The Simulator doe
 | No recordings appearing | Verify `domain` is correct and reachable from the device |
 | Need detail when debugging an integration | Set `logLevel: .info` in `NoibuConfig`, then filter the Xcode console / Console.app for `NB>` (see [Diagnostic Logging](#diagnostic-logging)) |
 | WebView content not in replay | Ensure `NoibuWebViewTracking.enable(_:)` is called **before** loading any URL. In UIKit, call it in `viewDidLoad` right after creating the `WKWebView`. |
-| UIKit: tap actions not tracked | `trackTapAction` is SwiftUI-only. Use `addCustomAttribute(name: "tap.action", value:)` instead. |
-| UIKit: screen names missing | Call `didNavigate(pageName:)` in `viewDidLoad` for each `UIViewController`. |
+| Taps not tracked | Check `trackTouches` is not `false`. `trackTapAction` calls are no-ops; taps are captured natively. |
+| UIKit: screen names missing | Call `didNavigate(pageName:)` in `viewDidLoad` for each `UIViewController`, or set `autoTrackNavigation: true`. |
+| `autoTrackNavigation` stopped splitting pages | An explicit `didNavigate` (including `.trackView`) silences automatic tracking for the rest of the process — remove the explicit calls or track every screen explicitly. |
 | `pod install` can't find spec | Run `pod install --repo-update` |
 | Build error after CocoaPods | Open `.xcworkspace`, not `.xcodeproj` |
 | Network requests not captured | Call `NoibuHTTPInterceptor.shared.installNetworkInstrumentation(on:)` on custom `URLSession` configurations |
 | Errors not appearing | Verify `addError(...)` is called after `initialize(configuration:)` |
 | Last events before backgrounding delayed/missing | Add the [Background Sync](#13-background-sync) `Info.plist` keys, and ensure `initialize` runs at launch so the task can register in time |
-| Pre-release version not resolvable | SPM requires `exact:` for pre-release versions |
+| SPM does not offer the version | Rules like **Up to Next Major** skip pre-release tags; use **Exact Version** for a `-rc` build. Stable releases such as `1.1.0` resolve with any rule. |
+| Link error mentioning `Kronos` | Let SPM / CocoaPods resolve the SDK's `Kronos` dependency (`pod install --repo-update`, or File → Packages → Resolve Package Versions) |
 
 ---
 
