@@ -5,6 +5,37 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3]
+
+### Fixed
+- **App Store uploads no longer fail with ITMS-90208 on Swift Package Manager installs.** Xcode
+  copied an empty `NoibuSessionReplay.framework` into the app, built for the app's own minimum iOS
+  version, so any app with a minimum other than iOS 14.0 was rejected at upload ("does not support
+  the minimum OS Version specified in the Info.plist"). The SDK is now linked straight into the app;
+  only `coreKit.framework` is embedded. A build phase you added to delete the empty framework can be
+  removed. CocoaPods installs were not affected.
+- **Replay processing stays light however much of a screen changes.** Its per-capture work is now
+  proportional to the screen; a large part of a screen disappearing and coming back used to cost
+  time that grew with the square of its size. Nothing to configure.
+- **SwiftUI colours replay at their real shade.** Resolved SwiftUI colours were read as linear light,
+  so every mid-tone replayed noticeably darker than the app drew it.
+- **Bundled fonts replay in the right face and weight.** SwiftUI text now uploads its bundled font as
+  UIKit text does; each bundled weight is its own face, so Medium and Bold no longer replay as one
+  file; text set in a bundled font keeps the position it has on screen instead of sitting a few points
+  low; and the weight sent is the face's own (Medium was replayed as Regular or Bold).
+- **Shadows and letter spacing replay.** A layer's `shadow*` on a UIKit view, and kerning and tracking
+  on UIKit, SwiftUI and React Native text, were dropped.
+- **React Native views on the new architecture keep their borders, corners, shadows and gradients.**
+  Fabric draws a border, a `boxShadow` and a `backgroundImage` gradient into its own sublayers; they
+  replayed as plain square boxes. `opacity` on a layout `View` that paints nothing now fades the views
+  under it, as it does on screen.
+- **Views inside a bordered view sit where they are drawn.** Every child of a view with a border was
+  replayed shifted in by the border's width.
+- **Fonts are on the first frame of a screen.** A screen whose font finished uploading after its first
+  capture replayed in a fallback font for the whole visit.
+- **Webview HTTP calls are reported with absolute URLs.** A page's fetch or XHR to a relative URL
+  was reported as written, and the backend dropped the whole session it could not parse.
+
 ## [1.1.2]
 
 ### Fixed
