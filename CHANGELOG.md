@@ -5,6 +5,43 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0]
+
+### Added
+- **Custom tab bars in page analysis.** A view carrying the `.tabBar` accessibility trait (a
+  `UITabBar`, a React Native `accessibilityRole="tablist"`, or your own bar with
+  `accessibilityTraits.insert(.tabBar)`) is the page's bottom bar. In SwiftUI, put
+  `.accessibilityElement(children: .contain).accessibilityAddTraits(.isTabBar)` on a hand-rolled bar;
+  a `TabView` needs nothing. Scroll views are marked by intent (`alwaysBounceVertical`, tables) as
+  well as by content size.
+
+### Fixed
+- **React Native text replays on the old architecture.** An old-architecture `RCTTextView` keeps its
+  string only in a private text storage, with no `attributedText` to read, so every `<Text>` of such an
+  app replayed as an empty box: labels, prices, buttons and tab titles. It is now read, with its font,
+  colour, line height and decoration.
+- **React Native borders replay in their own style on the old architecture.** The border style was read
+  one step off React Native's enum, so every solid border replayed dotted, and a dotted one dashed.
+- **No crash on a screen with a view whose frame isn't finite.** A view laid out with `CGRect.infinite`
+  or a NaN size — OneTrust's Preference Center has one — stopped the app as soon as the screen opened,
+  in the capture's change check. Such a value now reads as 0 there and in every other geometry the
+  SDK records, and a finite one too large to convert (a text box, corner radius or line height past
+  the integer range, a gradient stop that is NaN) is clamped instead of crashing.
+- **Page analysis: each visit names the screen it came from.** The referrer is recorded when the page
+  opens, so a visit whose predecessor had already been sent no longer arrives without one.
+- **Page analysis: a tap on empty space no longer lights up the whole page.** A tap between rows, on a
+  large unlabelled container, keys to the nearest content-sized element instead of a page-sized one.
+- **No blank page visit at launch.** Work that runs before the first screen names itself (a network
+  call at startup) no longer opens a visit of its own; the first screen adopts it.
+- **Page analysis: taps land on the element under the finger after a scroll.** A reused accessibility
+  read follows the scroll, and elements scrolled into view are added.
+- **No junk page visit on backgrounding.** The app-switcher snapshot no longer opens a one-frame visit.
+- **Grayscale and dark-mode backgrounds replay.** `.white`, `.black` and `.gray` fills and a dark
+  page's black background are kept, and UIKit text uses its resolved dynamic colour.
+- **Page analysis: click selectors are resolved at the tap.** The tapped element is looked up when the finger lifts, against what is on screen then, instead of when the pipeline drains seconds later — a tap followed by a scroll was attributed to whatever had moved under that point.
+- **Page analysis: scroll and tab-bar markers follow the screen.** A list that only becomes scrollable once its content loads, or a bar that settles into place after a transition, is re-marked instead of keeping the state of the first frame; nested Material bars pin once. A node's
+  selector class follows its key as siblings come and go, so a click always finds its element.
+
 ## [1.1.3]
 
 ### Fixed
