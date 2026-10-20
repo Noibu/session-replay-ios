@@ -17,13 +17,13 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "NoibuSessionReplay",
-            url: "https://github.com/Noibu/session-replay-ios/releases/download/1.2.0/NoibuSessionReplay.xcframework.zip",
-            checksum: "850aec07963e9a580005ed2c94ebd3a85cc22632c5057487ea05021d14d5bf4a"
+            url: "https://github.com/Noibu/session-replay-ios/releases/download/1.2.1/NoibuSessionReplay.xcframework.zip",
+            checksum: "622bf9cff1093ce69ab641a9bbcdcc0f63f681b9d0d0b1b802554f19cc107a47"
         ),
         .binaryTarget(
             name: "coreKit",
-            url: "https://github.com/Noibu/session-replay-ios/releases/download/1.2.0/coreKit.xcframework.zip",
-            checksum: "c8c3788358b6d70c67b29a10044a496a06190b5c1ab7998e64e9e967447eaf4b"
+            url: "https://github.com/Noibu/session-replay-ios/releases/download/1.2.1/coreKit.xcframework.zip",
+            checksum: "0678cbf8e0b72fdcd4ac63070e369b2180eee7db5e6184ba7320052cb4d0f0ec"
         ),
         .target(
             name: "NoibuSessionReplayKronosLink",
