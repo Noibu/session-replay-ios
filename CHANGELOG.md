@@ -5,6 +5,16 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1]
+
+### Fixed
+- **Image-heavy screens no longer freeze while Noibu records.** Every image the capture had not seen was
+  redrawn at its full size, PNG-encoded and hashed on the main thread, and a recycled list cell counted as
+  unseen — so a grid of product photos (a FlashList of `expo-image` cards, a `UICollectionView`) stopped
+  drawing for close to a second on landing and after every fling. Images are now drawn and encoded off the
+  main thread, at the size they are shown (at most 2x), photos as JPEG; the same photo is captured once
+  however often a cell shows it again. Nothing to configure.
+
 ## [1.2.0]
 
 ### Added
