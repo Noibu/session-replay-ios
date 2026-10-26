@@ -5,6 +5,84 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-10-26
+
+### BREAKING
+- **Pages now come exclusively from `trackNavigation` calls.** Automatic screen and WebView route
+  detection is removed: no view controller, SwiftUI view or webview navigation opens a page.
+- **One navigation API: `Noibu.shared.trackNavigation(screenName:attributes:)`.** Call it from every
+  screen (`viewDidAppear`, SwiftUI `.onAppear`), including when Back reveals it.
+- **Automatic page reporting removed.** The SDK no longer opens a page per appearing view controller
+  (`NoibuConfig.autoTrackNavigation` is gone). Apps that relied on automatic tracking must now call
+  `trackNavigation` on every page.
+- **WebViews open no pages.** A navigation inside a tracked webview no longer opens a page visit named
+  after its URL; its replay, clicks, errors and requests land on the current page. Report web steps with
+  `trackNavigation` (see [Web steps as pages](README.md#web-steps-as-pages)).
+- **Deprecated APIs removed:** `didNavigate(pageName:)`, SwiftUI `.trackView(name:)` and the no-op
+  tap annotations (SwiftUI `.trackTapAction(name:)`, UIKit `trackTapAction(name:)` /
+  `noibuTrackTapAction(name:)`).
+- **Unnamed or blank calls report nothing.** A blank `screenName` opens no page.
+- **Pages without a `trackNavigation` call.** On a fresh start (no previous screen), events land on a
+  `view/<uuid>` placeholder that the first screen takes over (within 2 s, or before any replay frame);
+  on a return from background, a relaunch or a new session, the next page copies the previous screen's
+  name, group and attributes; an app that never calls it gets `view/<uuid>` pages. See
+  [What happens without a call](README.md#what-happens-without-a-call).
+
+See [Migrating from 1.x](README.md#migrating-from-1x).
+
+### Added
+- **Screen names and attributes.** `trackNavigation(screenName:attributes:)` reports a page by its
+  template name (`Product Detail`, `Cart`), which is also its page group, with per-visit `attributes`
+  (`productId`); the same name with different attributes is a new visit.
+- **`pageType` attribute.** A standard type (`NoibuPageType` constants, any case) is the page group
+  instead of the screen name. Reserved names (`None`, `Page Check`, `Exit`…) are never sent as a group.
+- **Page groups** in page analysis: every page is grouped by its screen name or `pageType`.
+- **`onRouteChange` on `NoibuWebViewTracking.enable`.** Called with the route's `path?query` each time the
+  page inside a tracked WebView moves to a different route, so the app can report web steps with
+  `trackNavigation` (see [Web steps as pages](README.md#web-steps-as-pages)). The document the webview
+  loads first is not passed to it: the hosting screen reports that one with its own `path`.
+
+### Changed
+- `beginNavigationTransition()` is internal to the React Native bridge and no longer public API.
+
+### Removed
+- `NoibuConfig.autoTrackNavigation` and the automatic page per appearing view controller.
+- `didNavigate(pageName:)`, `.trackView(name:)`, `trackTapAction(name:)` (SwiftUI and UIKit),
+  `noibuTrackTapAction(name:)`.
+
+### Fixed
+- **UIKit views inside SwiftUI replay.** A `UIViewRepresentable` (a label, a Lottie view, a frame
+  animation) and a `TabView`'s tab bar were never walked; they now are, in paint order.
+- **A SwiftUI screen sliding over another stays opaque.** Its background, and the other screen's
+  content outside any scroll view, kept their paint order; a scroll view's content is only what is
+  inside it, and a moving fill keeps one node instead of a new one per frame.
+- **Animated splash content replays.** A `UIImageView` frame animation (`animationImages`) shows its
+  current frame, and a view drawn only by its layers (a `CAShapeLayer`, Lottie) is rasterized while it
+  animates, within the existing per-view cap.
+- **A screen sliding over another replays as a slide, not a scroll.** Children moving together under a
+  node that cannot scroll (an inner navigation the app does not report, a pager) were read as that node
+  scrolling: the screen sliding out was kept as an off-screen ghost and the move replayed as a scroll.
+  Only a node the walker marks scrollable scrolls now, and rows a pixel apart from float rounding no
+  longer make a list's scroll frame read as none.
+- **Sessions end after 29 minutes without input.** A page visit stayed open for as long as the process
+  lived when the app was never told it went to the background (launched straight into it, or
+  suspended before the lifecycle callback ran), so a visit hours later continued it. Now, as on the
+  web, 29 minutes with no tap, scroll, keystroke or navigation ends the session and seals its pages;
+  the next input starts a new session on a new page visit. Animations and network traffic don't count
+  as activity.
+- **Replay survives a crash or a kill.** The server stores a screen's replay only when its
+  connection closes; a long screen's connection is now checkpointed every 2 minutes, so a process that
+  dies with it open loses at most the last 2 minutes instead of the whole screen.
+- **The first replay frame of a screen is always its snapshot**, also when a tap opens the screen.
+- **Visits stay in order after a quick background.** A request begun on one screen and answered after
+  the app left it was filed to the next visit with its start time, so that visit started before the
+  one it followed and the two traded places (and referrers) in the timeline.
+- **Changes that don't move anything now reach the replay.** A label whose text or colour changes in
+  place (an auto-advancing banner), an image swap, or a fade or hide was skipped until the next tap,
+  because capture only re-walked the screen when a frame or scroll offset moved.
+- **iOS 27 scene-based apps seal the page on background.** Core now observes UIScene as well as
+  UIApplication lifecycle notifications, and treats a launch straight into the background as one.
+
 ## [1.2.1]
 
 ### Fixed

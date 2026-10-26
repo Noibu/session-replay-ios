@@ -6,7 +6,7 @@
 - [2. Installation](#2-installation)
 - [3. Configuration](#3-configuration)
 - [4. Initialization](#4-initialization)
-- [5. Page Navigation](#5-page-navigation)
+- [5. Pages (trackNavigation)](#5-pages-tracknavigation)
 - [6. Error Reporting](#6-error-reporting)
 - [7. Network Monitoring](#7-network-monitoring)
 - [8. WebView Support](#8-webview-support)
@@ -29,13 +29,13 @@
 
 ## 2. Installation
 
-The current release is **1.2.1**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager and CocoaPods resolve for you — nothing to add by hand.
+The current release is **2.0.0**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager and CocoaPods resolve for you — nothing to add by hand.
 
 ### Swift Package Manager (Xcode UI)
 
 1. In Xcode, go to **File → Add Package Dependencies…**
 2. Enter the package URL: `https://github.com/Noibu/session-replay-ios.git`
-3. Choose **Up to Next Major Version** from `1.2.1` (or **Exact Version** `1.2.1` to pin).
+3. Choose **Up to Next Major Version** from `2.0.0` (or **Exact Version** `2.0.0` to pin).
 4. Add the package to your app target.
 
 ### Swift Package Manager (`Package.swift`)
@@ -44,7 +44,7 @@ The current release is **1.2.1**. The SDK is distributed as prebuilt binary XCFr
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        from: "1.2.1"
+        from: "2.0.0"
     )
 ]
 ```
@@ -68,7 +68,7 @@ Add to your `Podfile`:
 platform :ios, '14.0'
 
 target 'YourApp' do
-  pod 'NoibuSessionReplay', '~> 1.2.1'
+  pod 'NoibuSessionReplay', '~> 2.0.0'
 end
 
 # Xcode 15+ defaults ENABLE_USER_SCRIPT_SANDBOXING = YES, which blocks CocoaPods'
@@ -118,13 +118,12 @@ The SDK is configured via `NoibuConfig`. Parameters:
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `domain` | `String` | **Yes** | - | Your Noibu domain endpoint (provided by Noibu) |
-| `privacyMode` | `NoibuPrivacyMode` | No | `.maskSensitive` | How much displayed text reaches the replay. See [Privacy Modes](#privacy-modes). |
+| `privacyMode` | `NoibuPrivacyMode` | No | `.maskSensitive` | How much displayed text reaches the replay. See [Privacy](#privacy). |
 | `logLevel` | `NoibuLogLevel?` | No | `nil` | Diagnostic log verbosity. Leave unset for the default (silent in release builds). See [Diagnostic Logging](#diagnostic-logging). |
 | `trackTouches` | `Bool` | No | `true` | Capture taps and scrolls (with DXA selectors) |
 | `trackKeyboard` | `Bool` | No | `true` | Capture keyboard-focus events (which field was typed in — never the text) |
 | `trackNetwork` | `Bool` | No | `true` | Capture HTTP requests/responses |
 | `trackWebViews` | `Bool` | No | `true` | Allow webview hybrid capture — off makes `NoibuWebViewTracking.enable` a no-op |
-| `autoTrackNavigation` | `Bool` | No | `false` | Derive page boundaries from `UIViewController.viewDidAppear` instead of explicit `didNavigate` calls. See [Page Navigation](#5-page-navigation). |
 | `trackErrors` | `Bool` | No | `true` | Report uncaught `NSException`s as errors (chains to the existing handler). See [Error Reporting](#6-error-reporting). |
 
 The field list mirrors Android's `SessionReplayConfig`, so the React Native and Flutter shims map one
@@ -261,87 +260,154 @@ if Noibu.shared.isInitialized {
 
 ---
 
-## 5. Page Navigation
+<a id="5-page-navigation"></a>
 
-A page visit starts at each page boundary. There are two ways to produce boundaries — **choose one**:
+## 5. Pages (trackNavigation)
 
-| Mode | How | Fits |
-|------|-----|------|
-| Explicit (default) | Call `Noibu.shared.didNavigate(pageName:)` (or `.trackView(name:)` in SwiftUI) at each screen | SwiftUI apps, custom routers, apps that want their own page names |
-| Automatic | `autoTrackNavigation: true` in `NoibuConfig` | UIKit apps with one `UIViewController` per screen |
+> **How pages work in 2.0**
+> - Pages are reported explicitly. The SDK no longer detects screens: no view controller or SwiftUI
+>   view opens a page on its own.
+> - Call `trackNavigation(screenName:attributes:)` for every page, including tabs, relevant modals and
+>   WebView steps (see [Web steps as pages](#web-steps-as-pages)).
+> - Track page groups, not individual views: `screenName` is the page group (`Product Detail`,
+>   `Checkout`), and attributes carry the variations (`productId`, `step`).
+> - Report every page entry, including Back.
+> - Repeating the same name and attributes continues the current visit; changing the attributes starts
+>   a new one.
 
-Nothing is detected automatically in SwiftUI: a SwiftUI screen only becomes a page when you call
-`didNavigate` or attach `.trackView(name:)`.
+### Page groups
 
-### Automatic Tracking (UIKit)
+**A screen name is a page group, not a view.** A *page* is everything the user experiences as one
+place in your app — not a single view or view controller. Page analysis, heatmaps and Journeys
+aggregate by screen name, so every view of that place reports the same one:
 
-With `autoTrackNavigation: true`, the SDK hooks `UIViewController.viewDidAppear` and opens a page for
-each content controller that appears:
+- every product detail, its gallery, size picker and reviews sheet → `Product Detail`
+- every category or listing → `Product List`
+- the address, payment and review steps of checkout → `Checkout`
 
-- Container controllers (`UINavigationController`, `UITabBarController`, `UISplitViewController`,
-  `UIPageViewController`, and any controller with child controllers) host a screen and are not pages.
-- `UIAlertController` and system-internal controllers are not pages; only controllers defined in your
-  app bundle count.
-- The page name is the class name with a trailing `ViewController`, `Controller` or `VC` removed
-  (`CartViewController` → `Cart`).
-- A consecutive re-appearance of the same controller instance (e.g. dismissing a sheet over it) does
-  not open a new page.
+| Think of it as… | Not as… |
+|---|---|
+| `Product Detail` (all product details) | `ProductDetailViewController`, `ProductDetailView` |
+| `Product List` (any listing) | `WomenTopsCategoryView` |
+| `Checkout` (all steps) | `CheckoutAddressView`, `CheckoutPaymentView` |
 
-**Do not mix the modes.** The first explicit `didNavigate` call permanently silences automatic
-tracking for the rest of the process, so a single stray call turns a fully auto-tracked app into one
-with a single page. If you need custom names for some screens, use explicit tracking everywhere.
+### Reporting a page
 
-### Manual Page Tracking
-
-Call `didNavigate()` when the user moves to a new page:
+Call `Noibu.shared.trackNavigation(screenName:attributes:)` when the user enters a page — in SwiftUI
+from the destination's `.onAppear`, in UIKit from `viewDidAppear`:
 
 ```swift
-Noibu.shared.didNavigate(pageName: "ProductDetails")
-Noibu.shared.didNavigate()   // boundary without a name
+Noibu.shared.trackNavigation(screenName: "Product Detail", attributes: [
+    "pageType": NoibuPageType.product, "category": "Clothing", "productId": "123",
+])
 ```
 
-#### SwiftUI — Tab switches
+- **`screenName`** — the page group the user is in (`Product Detail`, `Cart`, `Checkout`), shared by
+  every view of that place. Trimmed, and the page group is cut at 100 characters; a blank name reports
+  nothing.
+- **`attributes`** — what varies inside the page (`category`, `productId`, `step`…). The first 20 keys
+  of 1–50 characters; values are strings (cut at 200 characters), booleans, finite numbers or `NSNull()`.
+  Anything else is dropped, never thrown.
+- **`pageType`** (optional attribute) — places the page in a standard ecommerce category:
+  `NoibuPageType.home`, `.collection`, `.search`, `.product`, `.cart`, `.checkout`, `.login` (matched
+  ignoring case). Journeys groups and colours the page under that category; without it, the page is
+  grouped by its screen name. Only the exact key `pageType` is read: `pagetype` or `page_type` is an
+  ordinary attribute.
+
+**Repeated calls are safe.** Lifecycle callbacks such as `viewDidAppear` or `.onAppear` can fire again
+while the user stays on the same page (a dismissed sheet or alert). Reporting the page that is already
+current, with unchanged attributes, continues the existing visit; only a different name or different
+attributes starts a new one.
+
+**When to call `trackNavigation(screenName:attributes:)`:**
+- The user enters a different page (not when moving between views of the same page), including when
+  Back returns to one
+- Tab switches that represent distinct pages
+- Modal or sheet presentations that are a page of their own
+- Web steps inside a WebView (see [Web steps as pages](#web-steps-as-pages))
+- Deep link handling
+
+When a call starts a new visit, it appears in the session timeline and the events that follow (taps,
+errors, network requests, tracked events) are associated with it.
+
+### SwiftUI integration
+
+Report each screen from the `.onAppear` of the destination's root view (subviews of the same page don't
+need their own). Tab switches have no `onAppear` of their own to rely on; report them on the selection
+change:
 
 ```swift
-// In your root view, observe tab changes
 .onChange(of: selectedTab) { _, newTab in
-    Noibu.shared.didNavigate(pageName: newTab.title)
+    Noibu.shared.trackNavigation(screenName: newTab.screenName)   // "Home", "Product List", "Cart"…
 }
 ```
 
-#### UIKit — Tab switches
+### UIKit integration
 
-Call `didNavigate()` in the tab bar delegate, whenever the active tab changes:
+Call `trackNavigation` in `viewDidAppear` of each view controller of the page:
+
+```swift
+override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    Noibu.shared.trackNavigation(screenName: "Cart", attributes: ["pageType": NoibuPageType.cart])
+}
+```
+
+For a custom tab bar, call it in the tab bar delegate whenever the active tab changes:
 
 ```swift
 func tabBar(_ tabBar: CustomTabBarView, didSelect tab: AppTab) {
-    Noibu.shared.didNavigate(pageName: tab.title)
+    Noibu.shared.trackNavigation(screenName: tab.screenName)
     showTab(tab)
 }
 ```
 
-#### UIKit — Screen pushes
+### Naming your pages
 
-Call `didNavigate()` in `viewDidLoad` or `viewWillAppear` for each view controller:
+| Screen | `screenName` | `pageType` | Example attributes |
+|---|---|---|---|
+| Home | `Home` | `Home` | — |
+| Category listing | `Product List` | `Collection` | `category`, `subcategory` |
+| Search results | `Search` | `Search` | `query` |
+| Product detail | `Product Detail` | `Product` | `category`, `productType`, `productId` |
+| Cart | `Cart` | `Cart` | — |
+| Checkout | `Checkout` | `Checkout` | `step` |
+| Order confirmation | `Order Confirmed` | — | `orderId` |
+| Sign in | `Login` | `Login` | — |
 
-```swift
-override func viewDidLoad() {
-    super.viewDidLoad()
-    Noibu.shared.didNavigate(pageName: "Cart")
-}
-```
+- **Template, not content:** every product detail is `Product Detail`; ids and user data never go in
+  the name.
+- **Hierarchy and ids go in attributes** (`Product Detail` + `category`, not
+  `Product Detail - Clothing - Tops`).
+- **Attributes identify the visit:** the same name with different attributes starts a new visit.
+  `NSNull()` is a value: `"size": NSNull()` and no `size` key are different visits.
+  Every view of a page reports the same attributes; transient state (selected size, scroll position)
+  stays out.
+- **Small and stable:** well under 100 names, unchanged between releases. Reserved names (`None`,
+  `Page Check`, `External traffic`, `Exit`, `Other pages`, `No Page Group`, `All`) are sent without a group.
 
-**When to call `didNavigate(pageName:)`:**
-- Tab switches that represent distinct pages
-- Modal or sheet presentations
-- Custom routing flows outside the standard navigation stack
-- Deep link handling
+### What happens without a call
 
-**What happens:**
-1. Pending replay data is flushed for the current page
-2. A new full snapshot is captured
-3. Replay state is reset for fresh transformation
-4. A new page visit is created in analytics
+The SDK opens a page on its own when there is no call to take it:
+
+- **On a fresh start** (no previous screen), events, errors and replay land on an unnamed `view/<uuid>`
+  page with no group until the first call. If the app reports its first screen within 2 seconds, or
+  before any replay frame is captured, that screen takes the page over; otherwise the placeholder is
+  sent as a visit of its own.
+- **On a return from background, a relaunch or a new session**, the next page copies the previous
+  screen's name, group and attributes.
+- **An app that never calls `trackNavigation`** still records sessions, made of `view/<uuid>` pages.
+
+### Migrating from 1.x
+
+| 1.x | 2.0 |
+|---|---|
+| `Noibu.shared.didNavigate(pageName:)` / `didNavigate()` | `trackNavigation(screenName:attributes:)` |
+| SwiftUI `.trackView(name:)` | `.onAppear { Noibu.shared.trackNavigation(screenName:attributes:) }` |
+| `autoTrackNavigation: true` (a page per view controller) | Removed — call `trackNavigation` from each `viewDidAppear` |
+| SwiftUI `.trackTapAction(name:)`; UIKit `trackTapAction(name:)` / `noibuTrackTapAction(name:)` | Removed — delete the calls; taps are captured natively |
+
+Apps that relied on automatic tracking must now call `trackNavigation` on every page.
 
 ---
 
@@ -447,6 +513,9 @@ captured once init lands, and nothing is captured when `trackNetwork` is off.
 
 The SDK captures session replay data from `WKWebView` instances, rendering web content as part of the same mobile session recording. No setup is required on the web page itself.
 
+The webview opens no page: what it captures lands on the current page, including after a navigation
+inside the webview (see [Web steps as pages](#web-steps-as-pages)).
+
 ### Setup
 
 Call `NoibuWebViewTracking.enable(_:)` **after** creating the `WKWebView` and **before** loading any URL.
@@ -519,6 +588,44 @@ class WebViewController: UIViewController, WKNavigationDelegate {
 NoibuWebViewTracking.disable(webView)
 ```
 
+### Web steps as pages
+
+To see each step of a web flow as its own page, report every step with `trackNavigation` under the
+hosting screen's name, with the step's path as an attribute: the hosting screen reports the document
+the WebView loads first, and `onRouteChange` reports each later one.
+
+```swift
+// path?query of the document the WebView loads first
+private var webPath = "/checkout"
+
+override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    Noibu.shared.trackNavigation(screenName: "Checkout", attributes: ["path": webPath])
+}
+
+// in viewDidLoad, after creating the WKWebView and before loading the URL
+NoibuWebViewTracking.enable(webView, onRouteChange: { [weak self] path in
+    self?.webPath = path
+    Noibu.shared.trackNavigation(screenName: "Checkout", attributes: ["path": path])
+})
+```
+
+The hosting screen's first `path` is the key `onRouteChange` would use for that URL: its path and
+query, with the fragment dropped and an empty path as `/` (`https://shop.example.com/checkout?step=1#top`
+→ `/checkout?step=1`). For an inline document (`loadHTMLString(_:baseURL:)`),
+use its base URL (`https://example.com/` → `/`).
+
+The SDK calls `onRouteChange` on the main thread with the new route's `path?query` (the fragment is
+ignored) each time the page moves to a different one, through the browser history or a new document. It
+skips the document the WebView loads first, which the hosting screen reports, and opens no page itself.
+The closure is kept while the webview is tracked (until `disable(_:)`), so capture `self` weakly
+(`[weak self]`).
+
+Returning to the first document later comes through `onRouteChange` with that same `path`.
+
+When the hosting screen reports itself again (`viewDidAppear`, `.onAppear`), it reports the step it is
+on — the last `path`, starting from the first document's — so the current visit continues.
+
 ### Important Notes
 
 - Call `enable(_:)` **before** loading any URL — late attachment will miss the initial page load.
@@ -535,34 +642,31 @@ View tagging names the screens that appear in the replay timeline.
 
 ### SwiftUI
 
-`.trackView(name:)` calls `didNavigate(pageName:)` when the view appears — attach it to each screen's
-root view:
+Call `trackNavigation(screenName:attributes:)` from `.onAppear` of each screen's root view:
 
 ```swift
 var body: some View {
     VStack { ... }
-        .trackView(name: "ProductDetails")
+        .onAppear {
+            Noibu.shared.trackNavigation(screenName: "Product Detail", attributes: ["pageType": NoibuPageType.product, "productId": product.id])
+        }
 }
 ```
 
 ### UIKit
 
-`trackView` is a SwiftUI modifier. In UIKit, either enable `autoTrackNavigation` or call
-`didNavigate(pageName:)` in `viewDidLoad` (see [Page Navigation](#5-page-navigation)):
+Call `trackNavigation(screenName:attributes:)` in `viewDidAppear` (see [Pages](#5-pages-tracknavigation)):
 
 ```swift
-override func viewDidLoad() {
-    super.viewDidLoad()
-    Noibu.shared.didNavigate(pageName: "ProductDetails")
+override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    Noibu.shared.trackNavigation(screenName: "Product Detail", attributes: ["pageType": NoibuPageType.product, "productId": product.id])
 }
 ```
 
 ### Taps
 
 Taps and scrolls are captured natively for every element when `trackTouches` is on — nothing to tag.
-`.trackTapAction(name:)` (SwiftUI), `Noibu.shared.trackTapAction(name:)` and
-`UIControl.noibuTrackTapAction(name:)` (UIKit) still compile for source compatibility but do nothing;
-remove them from your code at your convenience.
 
 ### Naming Best Practices
 
@@ -645,7 +749,7 @@ lists why, in the same words as the web SDK. Two messages have constants: a payl
 `initialize` answers `NoibuTrackResult.notInitialized`.
 
 `track` can be called from any thread. An event tracked as a screen appears — for example right
-after `didNavigate` — is ordered behind that boundary and lands on the new screen's page visit.
+after `trackNavigation` — is ordered behind that boundary and lands on the new screen's page visit.
 
 ### Standard ecommerce events
 
@@ -717,8 +821,8 @@ This will:
 - Flush pending data
 - Stop the lifecycle, session and clock monitors
 
-The tap and auto-navigation hooks and the uncaught-exception handler stay installed (they cannot be
-removed safely once in place) but go inert: everything they observe is dropped while the SDK is not
+The tap hook and the uncaught-exception handler stay installed (they cannot be removed safely once
+in place) but go inert: everything they observe is dropped while the SDK is not
 initialized.
 
 `initialize(configuration:)` is accepted again afterwards, so consent can be granted later in the same app run.
@@ -765,12 +869,11 @@ Resume the app — the SDK drains and sends any pending data. (The Simulator doe
 | Feature | SwiftUI | UIKit |
 |---------|---------|-------|
 | Initialization | `App.init()` | `AppDelegate.application(_:didFinishLaunchingWithOptions:)` |
-| Screen tracking | `.trackView(name:)` modifier | `Noibu.shared.didNavigate(pageName:)` in `viewDidLoad`, or `autoTrackNavigation: true` |
+| Screen tracking | `Noibu.shared.trackNavigation(screenName:attributes:)` in `.onAppear` | `Noibu.shared.trackNavigation(screenName:attributes:)` in `viewDidAppear` |
 | Tap tracking | Automatic (`trackTouches`) | Automatic (`trackTouches`) |
-| Tab switches | `.onChange(of: selectedTab)` → `didNavigate` | Tab bar delegate → `didNavigate` (or automatic) |
+| Tab switches | `.onChange(of: selectedTab)` → `trackNavigation` | Tab bar delegate → `trackNavigation` |
 | WebView tracking | `NoibuWebViewTracking.enable` in `makeUIView` | `NoibuWebViewTracking.enable` in `viewDidLoad`, before `load` |
 | Per-view privacy | Global `privacyMode` only | `view.noibuPrivacy = .mask / .maskInputs / .hidden` |
-| Automatic screen detection | — (use `.trackView`) | `autoTrackNavigation: true`; never mix with explicit `didNavigate` |
 
 ---
 
@@ -781,15 +884,14 @@ Resume the app — the SDK drains and sends any pending data. (The Simulator doe
 | No recordings appearing | Verify `domain` is correct and reachable from the device |
 | Need detail when debugging an integration | Set `logLevel: .info` in `NoibuConfig`, then filter the Xcode console / Console.app for `NB>` (see [Diagnostic Logging](#diagnostic-logging)) |
 | WebView content not in replay | Ensure `NoibuWebViewTracking.enable(_:)` is called **before** loading any URL. In UIKit, call it in `viewDidLoad` right after creating the `WKWebView`. |
-| Taps not tracked | Check `trackTouches` is not `false`. `trackTapAction` calls are no-ops; taps are captured natively. |
-| UIKit: screen names missing | Call `didNavigate(pageName:)` in `viewDidLoad` for each `UIViewController`, or set `autoTrackNavigation: true`. |
-| `autoTrackNavigation` stopped splitting pages | An explicit `didNavigate` (including `.trackView`) silences automatic tracking for the rest of the process — remove the explicit calls or track every screen explicitly. |
+| Taps not tracked | Check `trackTouches` is not `false`; taps are captured natively. |
+| Screen names missing | Call `trackNavigation(screenName:attributes:)` from every screen (`.onAppear` / `viewDidAppear`). |
 | `pod install` can't find spec | Run `pod install --repo-update` |
 | Build error after CocoaPods | Open `.xcworkspace`, not `.xcodeproj` |
 | Network requests not captured | Call `NoibuHTTPInterceptor.shared.installNetworkInstrumentation(on:)` on custom `URLSession` configurations |
 | Errors not appearing | Verify `addError(...)` is called after `initialize(configuration:)` |
 | Last events before backgrounding delayed/missing | Add the [Background Sync](#13-background-sync) `Info.plist` keys, and ensure `initialize` runs at launch so the task can register in time |
-| SPM does not offer the version | Rules like **Up to Next Major** skip pre-release tags; use **Exact Version** for a `-rc` build. Stable releases such as `1.2.1` resolve with any rule. |
+| SPM does not offer the version | Rules like **Up to Next Major** skip pre-release tags; use **Exact Version** for a `-rc` build. Stable releases such as `2.0.0` resolve with any rule. |
 | Link error mentioning `Kronos` | Let SPM / CocoaPods resolve the SDK's `Kronos` dependency (`pod install --repo-update`, or File → Packages → Resolve Package Versions) |
 
 ---
