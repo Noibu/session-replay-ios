@@ -29,13 +29,13 @@
 
 ## 2. Installation
 
-The current release is **2.0.0**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager and CocoaPods resolve for you — nothing to add by hand.
+The current release is **2.0.1**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager and CocoaPods resolve for you — nothing to add by hand.
 
 ### Swift Package Manager (Xcode UI)
 
 1. In Xcode, go to **File → Add Package Dependencies…**
 2. Enter the package URL: `https://github.com/Noibu/session-replay-ios.git`
-3. Choose **Up to Next Major Version** from `2.0.0` (or **Exact Version** `2.0.0` to pin).
+3. Choose **Up to Next Major Version** from `2.0.1` (or **Exact Version** `2.0.1` to pin).
 4. Add the package to your app target.
 
 ### Swift Package Manager (`Package.swift`)
@@ -44,7 +44,7 @@ The current release is **2.0.0**. The SDK is distributed as prebuilt binary XCFr
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        from: "2.0.0"
+        from: "2.0.1"
     )
 ]
 ```
@@ -68,7 +68,7 @@ Add to your `Podfile`:
 platform :ios, '14.0'
 
 target 'YourApp' do
-  pod 'NoibuSessionReplay', '~> 2.0.0'
+  pod 'NoibuSessionReplay', '~> 2.0.1'
 end
 
 # Xcode 15+ defaults ENABLE_USER_SCRIPT_SANDBOXING = YES, which blocks CocoaPods'
@@ -417,7 +417,9 @@ Page analysis pins the screen's bottom bar to the bottom of the snapshot while t
 expands. A `UITabBar` (a SwiftUI `TabView` hosts one) needs nothing. A hand-rolled bar declares itself
 with the platform's own trait: in UIKit `accessibilityTraits.insert(.tabBar)` on the bar view; in
 SwiftUI `.accessibilityElement(children: .contain).accessibilityAddTraits(.isTabBar)` on its container
-(`.contain`, so each tab keeps its own label).
+(`.contain`, so each tab keeps its own label). SwiftUI only exposes that trait while an accessibility
+client is running, so the SDK also recognises a SwiftUI bar by its shape: a row of three or more tabs
+along the bottom of the screen.
 
 ## 6. Error Reporting
 
@@ -891,7 +893,7 @@ Resume the app — the SDK drains and sends any pending data. (The Simulator doe
 | Network requests not captured | Call `NoibuHTTPInterceptor.shared.installNetworkInstrumentation(on:)` on custom `URLSession` configurations |
 | Errors not appearing | Verify `addError(...)` is called after `initialize(configuration:)` |
 | Last events before backgrounding delayed/missing | Add the [Background Sync](#13-background-sync) `Info.plist` keys, and ensure `initialize` runs at launch so the task can register in time |
-| SPM does not offer the version | Rules like **Up to Next Major** skip pre-release tags; use **Exact Version** for a `-rc` build. Stable releases such as `2.0.0` resolve with any rule. |
+| SPM does not offer the version | Rules like **Up to Next Major** skip pre-release tags; use **Exact Version** for a `-rc` build. Stable releases such as `2.0.1` resolve with any rule. |
 | Link error mentioning `Kronos` | Let SPM / CocoaPods resolve the SDK's `Kronos` dependency (`pod install --repo-update`, or File → Packages → Resolve Package Versions) |
 
 ---

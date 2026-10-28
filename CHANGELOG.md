@@ -5,6 +5,15 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-10-28
+
+### Fixed
+- **SwiftUI tab bars are pinned in page analysis on real devices.** SwiftUI only exposes a bar's
+  `.isTabBar` trait while an accessibility client is running, so on most devices a custom bar (for
+  example one placed with `.safeAreaInset(edge: .bottom)`) was not recognised, and page analysis scrolled
+  it away with the page instead of pinning it to the bottom of the snapshot. The SDK now also recognises
+  the bar by its shape. Nothing to configure.
+
 ## [2.0.0] - 2026-10-26
 
 ### BREAKING
