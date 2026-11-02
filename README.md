@@ -12,6 +12,7 @@
 - [8. WebView Support](#8-webview-support)
 - [9. View Tagging](#9-view-tagging)
 - [10. Custom Attributes](#10-custom-attributes)
+- [10b. Tracking Events](#10b-tracking-events)
 - [11. Privacy & Security](#11-privacy--security)
 - [12. Lifecycle Management](#12-lifecycle-management)
 - [13. Background Sync](#13-background-sync)
@@ -29,13 +30,13 @@
 
 ## 2. Installation
 
-The current release is **2.0.1**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager and CocoaPods resolve for you — nothing to add by hand.
+The current release is **2.1.0**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager and CocoaPods resolve for you — nothing to add by hand.
 
 ### Swift Package Manager (Xcode UI)
 
 1. In Xcode, go to **File → Add Package Dependencies…**
 2. Enter the package URL: `https://github.com/Noibu/session-replay-ios.git`
-3. Choose **Up to Next Major Version** from `2.0.1` (or **Exact Version** `2.0.1` to pin).
+3. Choose **Up to Next Major Version** from `2.1.0` (or **Exact Version** `2.1.0` to pin).
 4. Add the package to your app target.
 
 ### Swift Package Manager (`Package.swift`)
@@ -44,7 +45,7 @@ The current release is **2.0.1**. The SDK is distributed as prebuilt binary XCFr
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        from: "2.0.1"
+        from: "2.1.0"
     )
 ]
 ```
@@ -68,7 +69,7 @@ Add to your `Podfile`:
 platform :ios, '14.0'
 
 target 'YourApp' do
-  pod 'NoibuSessionReplay', '~> 2.0.1'
+  pod 'NoibuSessionReplay', '~> 2.1.0'
 end
 
 # Xcode 15+ defaults ENABLE_USER_SCRIPT_SANDBOXING = YES, which blocks CocoaPods'
@@ -267,8 +268,8 @@ if Noibu.shared.isInitialized {
 > **How pages work in 2.0**
 > - Pages are reported explicitly. The SDK no longer detects screens: no view controller or SwiftUI
 >   view opens a page on its own.
-> - Call `trackNavigation(screenName:attributes:)` for every page, including tabs, relevant modals and
->   WebView steps (see [Web steps as pages](#web-steps-as-pages)).
+> - Call `trackNavigation(screenName:attributes:title:)` for every page, including tabs, relevant
+>   modals and WebView steps (see [Web steps as pages](#web-steps-as-pages)).
 > - Track page groups, not individual views: `screenName` is the page group (`Product Detail`,
 >   `Checkout`), and attributes carry the variations (`productId`, `step`).
 > - Report every page entry, including Back.
@@ -293,13 +294,13 @@ aggregate by screen name, so every view of that place reports the same one:
 
 ### Reporting a page
 
-Call `Noibu.shared.trackNavigation(screenName:attributes:)` when the user enters a page — in SwiftUI
-from the destination's `.onAppear`, in UIKit from `viewDidAppear`:
+Call `Noibu.shared.trackNavigation(screenName:attributes:title:)` when the user enters a page — in
+SwiftUI from the destination's `.onAppear`, in UIKit from `viewDidAppear`:
 
 ```swift
 Noibu.shared.trackNavigation(screenName: "Product Detail", attributes: [
     "pageType": NoibuPageType.product, "category": "Clothing", "productId": "123",
-])
+], title: "Sport Backpack")
 ```
 
 - **`screenName`** — the page group the user is in (`Product Detail`, `Cart`, `Checkout`), shared by
@@ -308,6 +309,10 @@ Noibu.shared.trackNavigation(screenName: "Product Detail", attributes: [
 - **`attributes`** — what varies inside the page (`category`, `productId`, `step`…). The first 20 keys
   of 1–50 characters; values are strings (cut at 200 characters), booleans, finite numbers or `NSNull()`.
   Anything else is dropped, never thrown.
+- **`title`** (optional) — the page's human-readable title, what Noibu shows for it (the product's
+  name on a product page, say). Without one, the screen name is the title. Trimmed and cut at 1024
+  characters. The title does not identify the visit: a later call with the same name and attributes
+  continues the visit and keeps its first title, so pass the title on the call that opens the page.
 - **`pageType`** (optional attribute) — places the page in a standard ecommerce category:
   `NoibuPageType.home`, `.collection`, `.search`, `.product`, `.cart`, `.checkout`, `.login` (matched
   ignoring case). Journeys groups and colours the page under that category; without it, the page is
@@ -319,7 +324,7 @@ while the user stays on the same page (a dismissed sheet or alert). Reporting th
 current, with unchanged attributes, continues the existing visit; only a different name or different
 attributes starts a new one.
 
-**When to call `trackNavigation(screenName:attributes:)`:**
+**When to call `trackNavigation(screenName:attributes:title:)`:**
 - The user enters a different page (not when moving between views of the same page), including when
   Back returns to one
 - Tab switches that represent distinct pages
@@ -395,7 +400,7 @@ The SDK opens a page on its own when there is no call to take it:
   before any replay frame is captured, that screen takes the page over; otherwise the placeholder is
   sent as a visit of its own.
 - **On a return from background, a relaunch or a new session**, the next page copies the previous
-  screen's name, group and attributes.
+  screen's name, group, attributes and title.
 - **An app that never calls `trackNavigation`** still records sessions, made of `view/<uuid>` pages.
 
 ### Migrating from 1.x
@@ -644,7 +649,7 @@ View tagging names the screens that appear in the replay timeline.
 
 ### SwiftUI
 
-Call `trackNavigation(screenName:attributes:)` from `.onAppear` of each screen's root view:
+Call `trackNavigation(screenName:attributes:title:)` from `.onAppear` of each screen's root view:
 
 ```swift
 var body: some View {
@@ -657,7 +662,7 @@ var body: some View {
 
 ### UIKit
 
-Call `trackNavigation(screenName:attributes:)` in `viewDidAppear` (see [Pages](#5-pages-tracknavigation)):
+Call `trackNavigation(screenName:attributes:title:)` in `viewDidAppear` (see [Pages](#5-pages-tracknavigation)):
 
 ```swift
 override func viewDidAppear(_ animated: Bool) {
@@ -871,7 +876,7 @@ Resume the app — the SDK drains and sends any pending data. (The Simulator doe
 | Feature | SwiftUI | UIKit |
 |---------|---------|-------|
 | Initialization | `App.init()` | `AppDelegate.application(_:didFinishLaunchingWithOptions:)` |
-| Screen tracking | `Noibu.shared.trackNavigation(screenName:attributes:)` in `.onAppear` | `Noibu.shared.trackNavigation(screenName:attributes:)` in `viewDidAppear` |
+| Screen tracking | `Noibu.shared.trackNavigation(screenName:attributes:title:)` in `.onAppear` | `Noibu.shared.trackNavigation(screenName:attributes:title:)` in `viewDidAppear` |
 | Tap tracking | Automatic (`trackTouches`) | Automatic (`trackTouches`) |
 | Tab switches | `.onChange(of: selectedTab)` → `trackNavigation` | Tab bar delegate → `trackNavigation` |
 | WebView tracking | `NoibuWebViewTracking.enable` in `makeUIView` | `NoibuWebViewTracking.enable` in `viewDidLoad`, before `load` |
@@ -887,13 +892,13 @@ Resume the app — the SDK drains and sends any pending data. (The Simulator doe
 | Need detail when debugging an integration | Set `logLevel: .info` in `NoibuConfig`, then filter the Xcode console / Console.app for `NB>` (see [Diagnostic Logging](#diagnostic-logging)) |
 | WebView content not in replay | Ensure `NoibuWebViewTracking.enable(_:)` is called **before** loading any URL. In UIKit, call it in `viewDidLoad` right after creating the `WKWebView`. |
 | Taps not tracked | Check `trackTouches` is not `false`; taps are captured natively. |
-| Screen names missing | Call `trackNavigation(screenName:attributes:)` from every screen (`.onAppear` / `viewDidAppear`). |
+| Screen names missing | Call `trackNavigation(screenName:attributes:title:)` from every screen (`.onAppear` / `viewDidAppear`). |
 | `pod install` can't find spec | Run `pod install --repo-update` |
 | Build error after CocoaPods | Open `.xcworkspace`, not `.xcodeproj` |
 | Network requests not captured | Call `NoibuHTTPInterceptor.shared.installNetworkInstrumentation(on:)` on custom `URLSession` configurations |
 | Errors not appearing | Verify `addError(...)` is called after `initialize(configuration:)` |
 | Last events before backgrounding delayed/missing | Add the [Background Sync](#13-background-sync) `Info.plist` keys, and ensure `initialize` runs at launch so the task can register in time |
-| SPM does not offer the version | Rules like **Up to Next Major** skip pre-release tags; use **Exact Version** for a `-rc` build. Stable releases such as `2.0.1` resolve with any rule. |
+| SPM does not offer the version | Rules like **Up to Next Major** skip pre-release tags; use **Exact Version** for a `-rc` build. Stable releases such as `2.1.0` resolve with any rule. |
 | Link error mentioning `Kronos` | Let SPM / CocoaPods resolve the SDK's `Kronos` dependency (`pod install --repo-update`, or File → Packages → Resolve Package Versions) |
 
 ---

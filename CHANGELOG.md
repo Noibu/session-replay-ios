@@ -5,6 +5,25 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-11-02
+
+### Added
+- **Page titles: `Noibu.shared.trackNavigation(screenName:attributes:title:)`.** An optional `title` is
+  what Noibu shows for the page (e.g. the product's name on a product page); without one, the screen
+  name is the title. Existing calls keep working.
+- **Device language** is reported with every page.
+
+### Fixed
+- **Taps replay on the element that was tapped**, not on the page as a whole.
+- **Drags replay as finger movement**, so a scroll or swipe shows where the finger went.
+- **Nothing lingers on screen after a scroll.** Once a screen had scrolled, anything that disappeared
+  while still in view stayed drawn in the replay: the text cursor at every position it had been, a
+  closed menu or picker, a dismissed message. It now leaves the replay when it leaves the screen.
+- **An empty text field's placeholder replays once**, in its placeholder color — it appeared twice,
+  slightly offset (SwiftUI and UIKit).
+- **Replays of complex screens play reliably** in every browser (element ids now fit what a browser can
+  hold exactly).
+
 ## [2.0.1] - 2026-10-28
 
 ### Fixed
