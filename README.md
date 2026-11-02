@@ -24,13 +24,13 @@
 - **Minimum iOS**: 14.0
 - **Swift**: 5.9+
 - **Xcode**: 26.0+
-- **Dependency manager**: Swift Package Manager **or** CocoaPods
+- **Dependency manager**: Swift Package Manager
 
 ---
 
 ## 2. Installation
 
-The current release is **2.1.0**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager and CocoaPods resolve for you — nothing to add by hand.
+The current release is **2.1.0**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager resolves for you — nothing to add by hand.
 
 ### Swift Package Manager (Xcode UI)
 
@@ -63,50 +63,11 @@ Then reference the product in your target:
 
 ### CocoaPods
 
-Add to your `Podfile`:
-
-```ruby
-platform :ios, '14.0'
-
-target 'YourApp' do
-  pod 'NoibuSessionReplay', '~> 2.1.0'
-end
-
-# Xcode 15+ defaults ENABLE_USER_SCRIPT_SANDBOXING = YES, which blocks CocoaPods'
-# "[CP] Embed Pods Frameworks" script (it copies coreKit.framework into your app) with
-# "Sandbox: rsync ... Operation not permitted". Disable script sandboxing on your app target:
-post_install do |installer|
-  installer.aggregate_targets.each do |aggregate_target|
-    aggregate_target.user_project.native_targets.each do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
-      end
-    end
-    aggregate_target.user_project.save
-  end
-end
-```
-
-Then install and open the generated workspace:
-
-```bash
-pod install --repo-update
-open YourApp.xcworkspace
-```
-
-> **The pod is a binary.** CocoaPods downloads the prebuilt xcframework bundle from the matching
-> GitHub release and pulls in the `Kronos` pod as a dependency; nothing is compiled from source.
->
-> **Any linkage mode works.** The SDK vendors a dynamic `coreKit.xcframework`, and CocoaPods adds
-> the `[CP] Embed Pods Frameworks` phase for a vendored dynamic xcframework whether or not you use
-> `use_frameworks!` — verified against this pod under `use_frameworks! :linkage => :static` and with
-> no `use_frameworks!` at all. Use whichever mode your app already uses; React Native apps must
-> keep `:linkage => :static` (Hermes does not support dynamic frameworks).
->
-> You can also set `ENABLE_USER_SCRIPT_SANDBOXING` to `No` in your app target's Build Settings
-> instead of the `post_install` hook.
->
-> Always open `.xcworkspace`, not `.xcodeproj`, when using CocoaPods.
+The SDK is no longer published to CocoaPods: CocoaPods trunk is read-only and accepts no new
+versions. Versions up to `2.0.1` remain installable from CocoaPods, but `2.1.0` and later are
+available through Swift Package Manager only. To move an existing app over, remove
+`pod 'NoibuSessionReplay'` from your `Podfile`, run `pod install`, then add the package with either
+of the Swift Package Manager options above.
 
 ---
 
@@ -893,13 +854,11 @@ Resume the app — the SDK drains and sends any pending data. (The Simulator doe
 | WebView content not in replay | Ensure `NoibuWebViewTracking.enable(_:)` is called **before** loading any URL. In UIKit, call it in `viewDidLoad` right after creating the `WKWebView`. |
 | Taps not tracked | Check `trackTouches` is not `false`; taps are captured natively. |
 | Screen names missing | Call `trackNavigation(screenName:attributes:title:)` from every screen (`.onAppear` / `viewDidAppear`). |
-| `pod install` can't find spec | Run `pod install --repo-update` |
-| Build error after CocoaPods | Open `.xcworkspace`, not `.xcodeproj` |
 | Network requests not captured | Call `NoibuHTTPInterceptor.shared.installNetworkInstrumentation(on:)` on custom `URLSession` configurations |
 | Errors not appearing | Verify `addError(...)` is called after `initialize(configuration:)` |
 | Last events before backgrounding delayed/missing | Add the [Background Sync](#13-background-sync) `Info.plist` keys, and ensure `initialize` runs at launch so the task can register in time |
 | SPM does not offer the version | Rules like **Up to Next Major** skip pre-release tags; use **Exact Version** for a `-rc` build. Stable releases such as `2.1.0` resolve with any rule. |
-| Link error mentioning `Kronos` | Let SPM / CocoaPods resolve the SDK's `Kronos` dependency (`pod install --repo-update`, or File → Packages → Resolve Package Versions) |
+| Link error mentioning `Kronos` | Let Swift Package Manager resolve the SDK's `Kronos` dependency (File → Packages → Resolve Package Versions) |
 
 ---
 

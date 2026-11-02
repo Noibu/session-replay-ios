@@ -5,6 +5,14 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The SDK is distributed through Swift Package Manager only.** CocoaPods trunk is read-only, so no
+  new versions are published to CocoaPods. Versions up to 2.0.1 remain installable from CocoaPods;
+  2.1.0 and later are available through Swift Package Manager
+  (`https://github.com/Noibu/session-replay-ios.git`). See the README's Installation section to switch.
+
 ## [2.1.0] - 2026-11-02
 
 ### Added
