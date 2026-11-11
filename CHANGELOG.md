@@ -5,13 +5,83 @@ All notable changes to the **Noibu Session Replay iOS SDK** are documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.1]
 
 ### Changed
 - **The SDK is distributed through Swift Package Manager only.** CocoaPods trunk is read-only, so no
   new versions are published to CocoaPods. Versions up to 2.0.1 remain installable from CocoaPods;
   2.1.0 and later are available through Swift Package Manager
   (`https://github.com/Noibu/session-replay-ios.git`). See the README's Installation section to switch.
+
+### Fixed
+- **Apps no longer freeze at launch waiting on Noibu.** `trackNavigation`, and the first touch after a
+  session went idle, made the calling thread — usually the main thread — wait until the SDK had
+  written its pending events to disk. When the app kept the system's background queues busy, that wait
+  could hold an app on its launch screen. Nothing on the calling thread waits for those writes now.
+- **Going to the background and shutting the SDK down wait at most 300 ms.** Both used to wait for
+  pending events with no limit. Whatever is not written in time still lands afterwards, off the main
+  thread.
+- **Pages whose screen never changes keep their video.** A page that showed one unchanging screen —
+  most often the screen an app returns to from the background — was recorded as a single frame and
+  shown with no video. Its last screen now plays until the moment it left the screen: when the app went
+  to the background, the next page opened, or the SDK shut down. A page that ends because the session
+  went idle is not extended.
+- **The release frameworks no longer carry code-coverage instrumentation.** In 2.1.0, every function
+  in `NoibuSessionReplay` updated a code-coverage counter on the device as it ran. The build now fails
+  if those counters are present, so they cannot ship again.
+- **Capturing a screen costs the main thread far less.** On icon-heavy React Native screens most of
+  the SDK's main-thread time went to redrawing and PNG-encoding `react-native-svg` icons, re-reading
+  New Architecture text, and re-checking the whole screen for changes. An icon that has not changed
+  now reuses its last image until it redraws, the page changes, or a periodic recheck finds it
+  changed; a new screen's icons are encoded off the main thread, and identical icons once, and the
+  icons a navigation leaves in place are not redrawn while the new page settles. A New Architecture
+  text view's content is read only when it changes (it was rebuilt several times per view on every
+  capture), class names and fonts are looked at once each, new photos are named without converting
+  their whole bitmap, and the per-frame change check is far cheaper.
+- **Scrolling costs the main thread less.** While only scroll positions change, a capture reuses the
+  previous one and moves what scrolled instead of walking the whole screen again (a full capture still
+  runs on any other change and at least every 2 seconds). The capture rate also adapts to how long a
+  capture takes on the device; a navigation is still captured right away.
+- **Web views no longer hold up the main thread.** Replay, tap, error and request messages from a
+  tracked web view are processed in order off the main thread; a navigation or shutdown waits at most
+  50 ms for one still in progress.
+- **Only real SwiftUI screens are captured as SwiftUI.** Any view whose class name ends in
+  `HostingView` — React Native's root view, a share sheet, a web or map view — was walked as a SwiftUI
+  screen, which stalled the main thread (one capture measured 278 ms). Now only SwiftUI's own host
+  views that cover at least a quarter of the window are.
+- **Capture returns to its normal rate after a navigation.** When a screen reported a page that had
+  already been captured (for example a host reporting its screen a second time), the SDK kept
+  capturing every 100 ms instead of returning to its normal interval.
+- **A navigation no longer writes the SDK's page state to disk on the calling thread.** The state is
+  written in the background, and the file always ends on the newest state.
+- **A backgrounded page's last moments reach Noibu before the app is suspended.** Every check of the
+  SDK's on-disk queue asked iOS for the file's full attributes, owner and group names included, which is
+  slow where the account has no directory entry; the send that runs when the app goes to the background
+  spent seconds on those checks before sending anything. They now read only what they need.
+- **The SDK's background work no longer grows with the age of the install.** Sent events' files were
+  deleted but their folders were not, so every session left empty folders behind, and the SDK walked all
+  of them several times a minute (one test install had about 7,700). Emptied folders are now removed,
+  the ones earlier versions left are cleared a little at a time in the background, and the size check
+  runs a full scan only when the queue may be over its limit.
+- **Pages that ended when the app went to the background no longer keep their last screen in memory**
+  after the next page opens.
+- **On iOS 27, the glass tab bar's selected-tab highlight replays.** iOS 27 draws the selection capsule
+  differently from iOS 26; the capsule replayed with no fill.
+- **Certificate pinning and other authentication handlers work again with network capture on.**
+  Captured requests are re-sent through the SDK's own `URLSession`, which answered every TLS and HTTP
+  authentication challenge itself with the system default. The app's session delegate was never asked,
+  so certificate / public-key pinning (TrustKit, Alamofire's `ServerTrustManager`, a delegate's own
+  checks), client certificates and HTTP auth handlers were skipped — a request a pinned app should
+  have refused was loaded. Each challenge now goes to the app's session, which answers it exactly as it
+  does without the SDK.
+- **A pinned session no longer reuses connections another session opened.** Captured requests from
+  every `URLSession` were re-sent through one SDK session and shared its connections. The server's
+  certificate is checked only when a connection is opened, so a pinned session could reuse a connection
+  an unpinned session (`expo/fetch`, another SDK) had opened to the same host and skip its pin check.
+  That SDK session also used the shared cookie store, URL cache and default timeouts, so an ephemeral
+  session's requests went out with the shared cookies. Each app session's requests now go through a
+  session of their own, built from that session's configuration: connections, cookies, cache,
+  timeouts and TLS settings are the app session's, as without the SDK.
 
 ## [2.1.0] - 2026-11-02
 

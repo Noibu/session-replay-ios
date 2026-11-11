@@ -30,13 +30,13 @@
 
 ## 2. Installation
 
-The current release is **2.1.0**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager resolves for you — nothing to add by hand.
+The current release is **2.1.1**. The SDK is distributed as prebuilt binary XCFrameworks (`NoibuSessionReplay` and its `coreKit` runtime). It declares one dependency, [Kronos](https://github.com/lyft/Kronos) (NTP clock sync), which Swift Package Manager resolves for you — nothing to add by hand.
 
 ### Swift Package Manager (Xcode UI)
 
 1. In Xcode, go to **File → Add Package Dependencies…**
 2. Enter the package URL: `https://github.com/Noibu/session-replay-ios.git`
-3. Choose **Up to Next Major Version** from `2.1.0` (or **Exact Version** `2.1.0` to pin).
+3. Choose **Up to Next Major Version** from `2.1.1` (or **Exact Version** `2.1.1` to pin).
 4. Add the package to your app target.
 
 ### Swift Package Manager (`Package.swift`)
@@ -45,7 +45,7 @@ The current release is **2.1.0**. The SDK is distributed as prebuilt binary XCFr
 dependencies: [
     .package(
         url: "https://github.com/Noibu/session-replay-ios.git",
-        from: "2.1.0"
+        from: "2.1.1"
     )
 ]
 ```
